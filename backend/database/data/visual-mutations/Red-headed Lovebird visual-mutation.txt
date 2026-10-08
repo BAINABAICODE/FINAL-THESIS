@@ -18,3 +18,8 @@ CREATE TABLE pullarius_visual_mutations (
   PRIMARY KEY (id),
   UNIQUE KEY uq_species_mutation (species, mutation)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO pullarius_visual_mutations
+  (series, mutation, sf, df, allele, genotype, genetic_code, inheritance_type, phenotype, scientific_source, verification_status, computable)
+VALUES
+('Wild type', 'Wild Type', 'Not applicable. This is the unmutated bird.', 'Not applicable.', '+', '+/+', '+', 'Wild type', 'Native ancestral green. Male has a brighter orange-red face and black underwing coverts; female face is paler. Light blue rump is the species pattern, not a mutation.', 'AGASSCOM Group 7 AGSC 7.1.00', 'Verified', 0);

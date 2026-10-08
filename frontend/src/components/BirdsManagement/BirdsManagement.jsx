@@ -26,7 +26,7 @@ function geneDisplay(bird) {
 function visualMutationDisplay(record) {
   const names = (record?.visual_mutations || []).map((mutation) => mutation?.name).filter(Boolean)
   if (names.length) return names.join(', ')
-  return record?.visual_mutation?.name || '—'
+  return record?.visual_mutation?.name || 'Wild Type'
 }
 
 const GRANDPARENT_LABELS = [
@@ -38,10 +38,13 @@ const GRANDPARENT_LABELS = [
 
 function grandparentSummary(record) {
   if (!record) return null
+  const species = record.species?.label || record.species?.common_name
+  const namedMutation = (record.visual_mutations || []).map((mutation) => mutation?.name).filter(Boolean).join(', ')
+    || record.visual_mutation?.name
   const parts = [
-    record.species?.label || record.species?.common_name,
+    species,
     record.base_color?.name,
-    visualMutationDisplay(record) === '—' ? null : visualMutationDisplay(record),
+    namedMutation || (species ? 'Wild Type' : null),
     geneDisplay(record) === '—' ? null : geneDisplay(record),
   ].filter(Boolean)
   return parts.length ? parts.join(' · ') : null
@@ -98,7 +101,7 @@ function editHistory(bird, payload, catalogs) {
   push('Sex', sexDisplay(bird), sexLabel(payload.sex))
   push('Age', bird.age_months == null ? 'None' : `${bird.age_months} mo`, `${payload.age_months} mo`)
   push('Base Color', bird.base_color?.name || 'None', catalogLabel(catalogs.baseColors, payload.base_color_id))
-  push('Visual Mutation', visualMutationDisplay(bird) === '—' ? 'None' : visualMutationDisplay(bird), idListLabel(catalogs.visualMutations, payload.visual_mutation_ids))
+  push('Visual Mutation', visualMutationDisplay(bird), idListLabel(catalogs.visualMutations, payload.visual_mutation_ids))
   push('Split / Hidden Genes', geneDisplay(bird) === '—' ? 'None' : geneDisplay(bird), idListLabel(catalogs.splitGenes, payload.split_gene_ids))
 
   GRANDPARENT_LABELS.forEach(([key, label]) => {

@@ -1,5 +1,6 @@
 import { canonicalGenotypeKey, isWildType, parseGenotype } from './alleleEncoder'
 import { EXPRESSION_LABELS } from './constants'
+import { inheritsSplitGenes } from '../../components/Computation/shared/format.js'
 
 /**
  * F4 — Phenotype mapping.
@@ -57,19 +58,24 @@ export function isCarrierExpression(expression) {
  */
 export function mapPhenotype(genotype, sex, mode, lookup = []) {
   const stored = findStoredResult(genotype, sex, lookup)
-  const expression = stored?.expression || classifyExpression(genotype, mode)
+  const rawExpression = stored?.expression || classifyExpression(genotype, mode)
+  const maleSplits = inheritsSplitGenes({ sex })
+  const hiddenFromHen = !maleSplits && rawExpression === 'carrier_split'
+  const expression = hiddenFromHen ? 'non_carrier' : rawExpression
   return {
     genotype,
     sex,
     expression,
     expressionLabel: expressionLabel(expression),
-    phenotype: stored?.phenotype ?? null,
-    phenotypeNote: stored?.phenotype_note ?? (stored ? null : 'No stored phenotype record for this genotype.'),
+    phenotype: hiddenFromHen ? null : (stored?.phenotype ?? null),
+    phenotypeNote: hiddenFromHen
+      ? 'Only a cock inherits this as a split or hidden gene.'
+      : (stored?.phenotype_note ?? (stored ? null : 'No stored phenotype record for this genotype.')),
     baseColor: stored?.base_color ?? null,
     visualMutations: stored?.visual_mutations ?? [],
-    splitHidden: stored?.split_hidden ?? [],
+    splitHidden: maleSplits ? (stored?.split_hidden ?? []) : [],
     visual: isVisualExpression(expression),
-    carrier: isCarrierExpression(expression),
+    carrier: maleSplits && isCarrierExpression(rawExpression),
     storedMatch: Boolean(stored),
   }
 }

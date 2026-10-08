@@ -19,6 +19,7 @@ You have multiple specialized rules organized into **Skills** (comprehensive gui
 
 - [Git](./git.mdc) - Git commit and branching conventions
 - [Coding Style](./coding-style.mdc) - Coding style and best practices
+- [Use Case Diagram](./use-case-diagram.mdc) - Actor sides and include/extend rules for AGAPORA use-case diagrams
 
 ## Routing Guidelines
 

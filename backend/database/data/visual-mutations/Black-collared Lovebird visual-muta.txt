@@ -18,3 +18,8 @@ CREATE TABLE swindernianus_visual_mutations (
   PRIMARY KEY (id),
   UNIQUE KEY uq_species_mutation (species, mutation)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO swindernianus_visual_mutations
+  (series, mutation, sf, df, allele, genotype, genetic_code, inheritance_type, phenotype, scientific_source, verification_status, computable)
+VALUES
+('Wild type', 'Wild Type', 'Not applicable. This is the unmutated bird.', 'Not applicable.', '+', '+/+', '+', 'Wild type', 'Native ancestral green. The black collar and red bill are species markings, not a mutation.', 'Forshaw, Parrots of the World', 'Verified', 0);

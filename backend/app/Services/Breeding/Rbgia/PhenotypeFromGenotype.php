@@ -190,36 +190,10 @@ class PhenotypeFromGenotype
         $record = $speciesId
             ? $this->rememberBaseColor(
                 'combined:'.$speciesId.'|'.$fullCode,
-                function () use ($speciesId, $fullCode, $groundGenotype, $darkGenotype) {
-                    $record = BaseColor::query()
-                        ->where('lovebird_species_id', $speciesId)
-                        ->where(function ($query) use ($fullCode, $groundGenotype, $darkGenotype) {
-                            $query->where('genetic_code', $fullCode);
-                            if ($darkGenotype) {
-                                $query->orWhere('genetic_code', $groundGenotype.'|'.$darkGenotype);
-                            }
-                            $query->orWhere('genetic_code', 'like', $groundGenotype.'|%');
-                            $query->orWhere('genetic_code', $groundGenotype);
-                        })
-                        ->orderByRaw(
-                            'CASE WHEN genetic_code = ? THEN 0 WHEN genetic_code LIKE ? THEN 1 ELSE 2 END',
-                            [$fullCode, $groundGenotype.'|'.($darkGenotype ?: '').'%']
-                        )
-                        ->first();
-
-                    // Prefer exact ground|dark match when multiple rows share the ground segment.
-                    if ($darkGenotype) {
-                        $exact = BaseColor::query()
-                            ->where('lovebird_species_id', $speciesId)
-                            ->where('genetic_code', $fullCode)
-                            ->first();
-                        if ($exact) {
-                            $record = $exact;
-                        }
-                    }
-
-                    return $record;
-                },
+                fn () => BaseColor::query()
+                    ->where('lovebird_species_id', $speciesId)
+                    ->where('genetic_code', $fullCode)
+                    ->first(),
             )
             : null;
 
@@ -344,11 +318,7 @@ class PhenotypeFromGenotype
                 if ($speciesId && $genotype) {
                     $record = BaseColor::query()
                         ->where('lovebird_species_id', $speciesId)
-                        ->where(function ($query) use ($genotype) {
-                            $query->where('genetic_code', $genotype)
-                                ->orWhere('genetic_code', 'like', $genotype.'|%');
-                        })
-                        ->orderByRaw('CASE WHEN genetic_code = ? THEN 0 ELSE 1 END', [$genotype])
+                        ->where('genetic_code', $genotype)
                         ->first();
                 }
 

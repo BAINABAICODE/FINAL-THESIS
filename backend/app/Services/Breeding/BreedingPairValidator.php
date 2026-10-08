@@ -261,7 +261,12 @@ class BreedingPairValidator
             }
         }
 
-        $mutationIds = $bird->visualMutations->pluck('id')->map(fn ($id) => (int) $id)->all();
+        $mutationIds = $bird->visualMutations
+            ->pluck('id')
+            ->filter(fn ($id) => $id !== null)
+            ->map(fn ($id) => (int) $id)
+            ->values()
+            ->all();
         if ($mutationIds !== []) {
             $message = VisualMutationCatalog::incompatibleMessage(
                 $mutationIds,
@@ -290,7 +295,12 @@ class BreedingPairValidator
             }
         }
 
-        $geneIds = $bird->splitGenes->pluck('id')->map(fn ($id) => (int) $id)->all();
+        $geneIds = $bird->splitGenes
+            ->pluck('id')
+            ->filter(fn ($id) => $id !== null)
+            ->map(fn ($id) => (int) $id)
+            ->values()
+            ->all();
         if ($geneIds !== []) {
             $message = SplitGeneCatalog::incompatibleMessage(
                 $geneIds,

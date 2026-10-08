@@ -287,7 +287,250 @@ class RbgiaPredictor
             $outcomes[] = $outcome;
         }
 
+        return $this->applyPedigreeWeights($outcomes, $cock, $hen, $speciesId);
+    }
+
+    /**
+     * A grandparent chance mixes into the locus the bird can pass.
+     * The stored genotype stays unchanged. Only the offspring weights move.
+     *
+     * @param  list<array<string, mixed>>  $outcomes
+     * @return list<array<string, mixed>>
+     */
+    private function applyPedigreeWeights(array $outcomes, Bird $cock, Bird $hen, int $speciesId): array
+    {
+        $cockCarriers = $this->pedigreeCarrierMap($cock);
+        $henCarriers = $this->pedigreeCarrierMap($hen);
+        $keys = array_values(array_unique(array_merge(array_keys($cockCarriers), array_keys($henCarriers))));
+
+        foreach ($keys as $key) {
+            $index = $this->outcomeIndexForLocus($outcomes, $key);
+            $cockCarrier = $cockCarriers[$key] ?? null;
+            $henCarrier = $henCarriers[$key] ?? null;
+            if ($index === null) {
+                $outcomes[] = $this->weightedLocusOutcome($cockCarrier, $henCarrier, $speciesId);
+
+                continue;
+            }
+
+            $outcomes[$index] = $this->reweightLocusOutcome($outcomes[$index], $cockCarrier, $henCarrier, $speciesId);
+        }
+
         return $outcomes;
+    }
+
+    /**
+     * @return array<string, array<string, mixed>>
+     */
+    private function pedigreeCarrierMap(Bird $bird): array
+    {
+        $map = [];
+        foreach ($bird->getAttribute('pedigree_carriers') ?? [] as $carrier) {
+            if (! is_array($carrier) || empty($carrier['key'])) {
+                continue;
+            }
+            $map[(string) $carrier['key']] = $carrier;
+        }
+
+        return $map;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $outcomes
+     */
+    private function outcomeIndexForLocus(array $outcomes, string $key): ?int
+    {
+        foreach ($outcomes as $index => $outcome) {
+            $locus = (string) ($outcome['locus_key'] ?? '');
+            if ($locus === $key || $locus === 'mendelian:'.$key || str_ends_with($locus, ':'.$key)) {
+                return $index;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $outcome
+     * @param  array<string, mixed>|null  $cockCarrier
+     * @param  array<string, mixed>|null  $henCarrier
+     * @return array<string, mixed>
+     */
+    private function reweightLocusOutcome(array $outcome, ?array $cockCarrier, ?array $henCarrier, int $speciesId): array
+    {
+        $sexLinked = (bool) ($outcome['punnett']['sex_linked'] ?? false);
+        $cockWeights = $cockCarrier
+            ? $this->carrierGametes($cockCarrier, false)
+            : $this->alleleGametes($outcome['punnett']['parent_1_alleles'] ?? [], $sexLinked, false);
+        $henWeights = $henCarrier
+            ? $this->carrierGametes($henCarrier, true)
+            : $this->alleleGametes($outcome['punnett']['parent_2_alleles'] ?? [], $sexLinked, true);
+        $sample = $cockCarrier ?? $henCarrier;
+        $results = $this->punnett->crossWeighted(
+            $cockWeights,
+            $henWeights,
+            $sexLinked,
+            (string) ($outcome['inheritance_type'] ?? $sample['inheritance'] ?? ''),
+        );
+        $outcome['results'] = $this->mapLocusPhenotypes($results, [
+            'category' => $outcome['category'] ?? 'split_gene',
+            'name' => $outcome['name'] ?? ($sample['name'] ?? 'Locus'),
+            'locus_key' => $outcome['locus_key'] ?? null,
+        ], $speciesId);
+        $outcome['punnett']['results'] = $outcome['results'];
+        $outcome['provisional'] = true;
+        $outcome['confidence'] = 'probable';
+        $outcome['assumption_note'] = 'Grandparent records give this gene a chance below 1. Offspring probabilities use that chance.';
+
+        return $outcome;
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $cockCarrier
+     * @param  array<string, mixed>|null  $henCarrier
+     * @return array<string, mixed>
+     */
+    private function weightedLocusOutcome(?array $cockCarrier, ?array $henCarrier, int $speciesId): array
+    {
+        $sample = $cockCarrier ?? $henCarrier ?? [];
+        $sexLinked = (bool) ($sample['sex_linked'] ?? false);
+        $wild = (string) ($sample['wild'] ?? '');
+        $cockWeights = $cockCarrier
+            ? $this->carrierGametes($cockCarrier, false)
+            : [$wild => 1.0];
+        $henWeights = $henCarrier
+            ? $this->carrierGametes($henCarrier, true)
+            : [$wild => 1.0];
+        $results = $this->punnett->crossWeighted(
+            $cockWeights,
+            $henWeights,
+            $sexLinked,
+            (string) ($sample['inheritance'] ?? ''),
+        );
+        $mapped = $this->mapLocusPhenotypes($results, [
+            'category' => 'split_gene',
+            'name' => $sample['name'] ?? 'Locus',
+            'locus_key' => 'mendelian:'.($sample['key'] ?? 'locus'),
+        ], $speciesId);
+
+        return [
+            'category' => 'split_gene',
+            'name' => $sample['name'] ?? 'Locus',
+            'locus_key' => 'mendelian:'.($sample['key'] ?? 'locus'),
+            'inheritance_type' => $sample['inheritance'] ?? null,
+            'genetic_code_cock' => $this->weightLabel($cockWeights),
+            'genetic_code_hen' => $sexLinked ? $this->weightLabel($henWeights).'/W' : $this->weightLabel($henWeights),
+            'status' => 'calculated',
+            'confidence' => 'probable',
+            'provisional' => true,
+            'assumption_note' => 'Grandparent records give this gene a chance below 1. Offspring probabilities use that chance. A missing parent is the wild type.',
+            'punnett' => [
+                'parent_1_alleles' => array_keys($cockWeights),
+                'parent_2_alleles' => $sexLinked ? [...array_keys($henWeights), 'W'] : array_keys($henWeights),
+                'sex_linked' => $sexLinked,
+                'results' => $mapped,
+            ],
+            'results' => $mapped,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $carrier
+     * @return array<string, float>
+     */
+    private function carrierGametes(array $carrier, bool $hen): array
+    {
+        $chance = (float) ($carrier['chance'] ?? 0);
+        $mutant = (string) ($carrier['mutant'] ?? '');
+        $wild = (string) ($carrier['wild'] ?? $mutant.'+');
+        $passes = ($hen && ($carrier['sex_linked'] ?? false)) ? $chance : $chance / 2;
+
+        return $this->normalizedWeights([
+            $mutant => $passes,
+            $wild => 1 - $passes,
+        ]);
+    }
+
+    /**
+     * @param  list<string>|array<int, string>  $alleles
+     * @return array<string, float>
+     */
+    private function alleleGametes(array $alleles, bool $sexLinked, bool $hen): array
+    {
+        $usable = [];
+        foreach ($alleles as $allele) {
+            if ($sexLinked && $hen && strcasecmp((string) $allele, 'W') === 0) {
+                continue;
+            }
+            $usable[] = (string) $allele;
+        }
+        if ($usable === []) {
+            return [];
+        }
+        $share = 1 / count($usable);
+        $weights = [];
+        foreach ($usable as $allele) {
+            $weights[$allele] = ($weights[$allele] ?? 0) + $share;
+        }
+
+        return $weights;
+    }
+
+    /**
+     * @param  array<string, float>  $weights
+     * @return array<string, float>
+     */
+    private function normalizedWeights(array $weights): array
+    {
+        $kept = [];
+        foreach ($weights as $allele => $weight) {
+            if ($allele === '' || $weight <= 0) {
+                continue;
+            }
+            $kept[$allele] = (float) $weight;
+        }
+        $sum = array_sum($kept);
+
+        return $sum > 0 ? array_map(fn ($weight) => $weight / $sum, $kept) : $kept;
+    }
+
+    /**
+     * @param  array<string, float>  $weights
+     */
+    private function weightLabel(array $weights): string
+    {
+        $parts = [];
+        foreach ($weights as $allele => $weight) {
+            $parts[] = $allele.' '.rtrim(rtrim(number_format($weight, 2, '.', ''), '0'), '.');
+        }
+
+        return implode(' or ', $parts);
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $results
+     * @param  array<string, mixed>  $locus
+     * @return list<array<string, mixed>>
+     */
+    private function mapLocusPhenotypes(array $results, array $locus, int $speciesId): array
+    {
+        foreach ($results as &$row) {
+            $mapped = $this->phenotypes->forLocus([
+                'category' => $locus['category'] ?? null,
+                'name' => $locus['name'] ?? null,
+                'locus_key' => $locus['locus_key'] ?? null,
+                'genotype' => $row['genotype'],
+                'expression' => $row['expression'] ?? null,
+            ], $speciesId);
+            $row['phenotype'] = $mapped['phenotype'];
+            $row['base_color'] = $mapped['base_color'];
+            $row['visual_mutations'] = $mapped['visual_mutations'];
+            $row['split_hidden'] = $mapped['split_hidden'];
+            $row['phenotype_note'] = $mapped['note'];
+        }
+        unset($row);
+
+        return $results;
     }
 
     /**
@@ -500,7 +743,15 @@ class RbgiaPredictor
             $row['base_color_genotype'] = $mapped['base_color_genotype'] ?? null;
             $row['dark_factor'] = $mapped['dark_factor'] ?? null;
             $row['visual_mutations'] = $mapped['visual_mutations'];
-            $row['split_hidden_genes'] = $mapped['split_hidden'];
+            $isHen = in_array(strtolower((string) ($row['sex'] ?? '')), ['hen', 'female'], true);
+            $row['split_hidden_genes'] = $isHen ? [] : $mapped['split_hidden'];
+            if ($isHen && is_string($row['phenotype'] ?? null)) {
+                $parts = array_values(array_filter(
+                    array_map('trim', explode(' · ', $row['phenotype'])),
+                    fn (string $part) => $part !== '' && ! str_contains(strtolower($part), 'split'),
+                ));
+                $row['phenotype'] = $parts === [] ? null : implode(' · ', $parts);
+            }
             $row['sex_label'] = match ($row['sex'] ?? null) {
                 'cock', 'male' => 'Male / Cock',
                 'hen', 'female' => 'Female / Hen',
@@ -549,11 +800,11 @@ class RbgiaPredictor
         $grandparents = [];
         foreach ($bird->grandparents ?? [] as $grandparent) {
             $grandparents[] = [
-                'relation' => $grandparent->relation ?? $grandparent->side ?? null,
+                'relation' => $grandparent->role ?? null,
                 'bird_id' => $grandparent->bird_id ?? null,
                 'notes' => $grandparent->notes ?? null,
-                'confidence' => 'evidence_only',
-                'usage' => 'Grandparent rows are retained as evidence only. They do not invent a parental genotype.',
+                'confidence' => 'pedigree',
+                'usage' => 'A grandparent gene is used only when that grandparent proves the breeding bird inherited it. A possible gene is reported and left out of the Punnett square.',
             ];
         }
 

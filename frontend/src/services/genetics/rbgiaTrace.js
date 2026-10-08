@@ -7,6 +7,7 @@ import { resolveInheritanceMode } from './inheritanceResolver'
 import { chromosomeMapping, classifySexLinkedOutcome } from './sexLinkedResolver'
 import { DEFAULT_CLUTCH_SIZES } from './constants'
 import { homozygousFromSplitCarriers } from './splitCarrierHomozygous'
+import { inheritsSplitGenes } from '../../components/Computation/shared/format.js'
 
 /**
  * Orchestrates the F1–F5 trace for every locus the backend RBGIA engine processed and
@@ -166,7 +167,9 @@ export function buildJointOutcomes(result = {}) {
       baseColorGenotype: row.base_color_genotype || null,
       darkFactor: row.dark_factor || null,
       visualMutations: row.visual_mutations || [],
-      splitHiddenGenes: row.split_hidden_genes || [],
+      splitHiddenGenes: inheritsSplitGenes({ sex: row.sex, sex_label: row.sex_label })
+        ? (row.split_hidden_genes || [])
+        : [],
       genotype: row.genotype || null,
       phenotype: row.phenotype || null,
       eyes: row.eyes || egg?.eyes || null,

@@ -3,18 +3,46 @@ function traitNames(items) {
   return items.map((item) => (typeof item === 'string' ? item : item?.name)).filter(Boolean)
 }
 
+function namedColor(value) {
+  if (value == null || value === '') return ''
+  if (typeof value === 'object') return namedColor(value.name || value.base_color)
+  const text = String(value).trim()
+  return /^not recorded$/i.test(text) ? '' : text
+}
+
+function groundColorName(row) {
+  const sources = [
+    ...(row?.passed_from_parents || row?.passedFromParents || []),
+    ...(row?.loci || []),
+  ]
+  const ground = sources.find((item) => {
+    const label = String(item?.locus || item?.name || '')
+    const key = String(item?.locus_key || item?.locusKey || '')
+    if (key === 'dark_factor' || /dark factor/i.test(label)) return false
+    return item?.category === 'base_color' || key === 'ground_color' || /ground color/i.test(label)
+  })
+  if (!ground) return ''
+  const label = String(ground.locus || ground.name || '').trim()
+  const wrapped = label.match(/\(([^)]+)\)\s*$/)
+  const series = (wrapped ? wrapped[1] : label).trim()
+  if (/^visual/i.test(String(ground.expression || '')) && series && !/^ground color$/i.test(series)) {
+    return series
+  }
+  return namedColor(ground.chick_genotype || ground.genotype)
+}
+
 /** Mendelian answer for one chick. An empty list is a result, not a missing calculation. */
 export function outcomeBaseColor(row) {
-  if (row?.base_color || row?.baseColor) return row.base_color || row.baseColor
-  const passed = row?.passed_from_parents || row?.passedFromParents || []
-  const ground = passed.find((item) => item?.category === 'base_color' && !/dark factor/i.test(String(item.locus || '')))
-  if (ground?.chick_genotype) return ground.chick_genotype
+  const named = namedColor(row?.base_color || row?.baseColor)
+  if (named) return named
+  const ground = groundColorName(row)
+  if (ground) return ground
   return 'Wild type'
 }
 
 export function outcomeVisual(row) {
   const names = traitNames(row?.visual_mutations || row?.visualMutations)
-  return names.length ? names.join(', ') : 'Normal'
+  return names.length ? names.join(', ') : 'Wild Type'
 }
 
 function splitName(name) {
@@ -24,8 +52,8 @@ function splitName(name) {
 }
 
 export function outcomeSplit(row) {
-  const names = traitNames(row?.split_hidden_genes || row?.splitHiddenGenes || row?.split_genes)
-  return names.length ? names.map(splitName).join(', ') : 'Not split'
+  const names = inheritedSplitNames(row)
+  return names.length ? names.map(splitName).join(', ') : ''
 }
 
 function sexWord(row) {
@@ -35,12 +63,23 @@ function sexWord(row) {
   return 'chick'
 }
 
+/** Hens do not inherit split or hidden genes. Only a cock can carry them. */
+export function inheritsSplitGenes(row) {
+  return sexWord(row) !== 'hen'
+}
+
+function inheritedSplitNames(row) {
+  if (!inheritsSplitGenes(row)) return []
+  return traitNames(row?.split_hidden_genes || row?.splitHiddenGenes || row?.split_genes)
+}
+
 /** Aviary record: look, sex, then the hidden genes. Example: "Dilute Green cock, split Blue2". */
 export function breedingOutcome(row) {
   const visuals = traitNames(row?.visual_mutations || row?.visualMutations)
   const look = [visuals.join(' '), outcomeBaseColor(row)].filter(Boolean).join(' ')
   const hidden = outcomeSplit(row)
-  return `${look} ${sexWord(row)}, ${hidden === 'Not split' ? 'not split' : hidden}`
+  const sex = sexWord(row)
+  return hidden ? `${look} ${sex}, ${hidden}` : `${look} ${sex}`
 }
 
 export function percentText(value, digits = 1) {
@@ -83,13 +122,11 @@ export function geneInheritanceRows(rows, kind) {
       continue
     }
     if (kind === 'visual_mutation') {
-      const names = traitNames(row?.visual_mutations || row?.visualMutations)
-      add(names.length ? names.join(', ') : 'Normal', probability)
+      add(outcomeVisual(row), probability)
       continue
     }
-    const names = traitNames(row?.split_hidden_genes || row?.splitHiddenGenes || row?.split_genes)
-    if (!names.length) add('Not split', probability)
-    else names.forEach((name) => add(splitName(name), probability))
+    if (!inheritsSplitGenes(row)) continue
+    inheritedSplitNames(row).forEach((name) => add(splitName(name), probability))
   }
 
   return [...buckets.entries()]
@@ -109,7 +146,7 @@ export function barColor(name, index = 0) {
   if (text.includes('blue')) return '#2c6e9b'
   if (text.includes('green')) return '#1f7a4d'
   if (text.includes('dilute')) return '#c4a035'
-  if (text.includes('normal') || text.includes('not split')) return '#6b7280'
+  if (text.includes('normal') || text.includes('not split') || text.includes('wild type')) return '#6b7280'
   if (/\bcock\b/.test(text) || text.includes('male')) return '#1d4e89'
   if (/\bhen\b/.test(text) || text.includes('female')) return '#9a3d55'
   if (text.includes('opaline')) return '#8a4b9a'

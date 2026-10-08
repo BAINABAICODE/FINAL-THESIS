@@ -11,7 +11,8 @@ describe('outcome Mendelian answers', () => {
     expect(outcomeBaseColor(row)).toBe('Blue2')
     expect(outcomeVisual(row)).toBe('Dilute')
     expect(outcomeSplit(row)).toBe('split NSL Ino, split Blue2')
-    expect(breedingOutcome({ ...row, sex: 'hen' })).toBe('Dilute Blue2 hen, split NSL Ino, split Blue2')
+    expect(breedingOutcome({ ...row, sex: 'cock' })).toBe('Dilute Blue2 cock, split NSL Ino, split Blue2')
+    expect(breedingOutcome({ ...row, sex: 'hen' })).toBe('Dilute Blue2 hen')
   })
 
   it('treats a chick with no expressed mutation and no hidden allele as a calculated result', () => {
@@ -21,9 +22,27 @@ describe('outcome Mendelian answers', () => {
       ],
     }
     expect(outcomeBaseColor(row)).toBe('bl+/bl2')
-    expect(outcomeVisual(row)).toBe('Normal')
-    expect(outcomeSplit(row)).toBe('Not split')
-    expect(breedingOutcome({ ...row, sex: 'cock' })).toBe('bl+/bl2 cock, not split')
+    expect(outcomeVisual(row)).toBe('Wild Type')
+    expect(outcomeSplit(row)).toBe('')
+    expect(breedingOutcome({ ...row, sex: 'cock' })).toBe('bl+/bl2 cock')
+  })
+
+  it('drops a missing-color placeholder and uses the visible ground color', () => {
+    const row = {
+      base_color: 'Not recorded',
+      sex: 'hen',
+      visual_mutations: ['Cinnamon', 'SL Ino'],
+      passed_from_parents: [
+        {
+          locus: 'Ground color (AquaTurquoise)',
+          category: 'base_color',
+          expression: 'visual_compound',
+          chick_genotype: 'blaq/bltq',
+        },
+      ],
+    }
+    expect(outcomeBaseColor(row)).toBe('AquaTurquoise')
+    expect(breedingOutcome(row)).toBe('Cinnamon SL Ino AquaTurquoise hen')
   })
 
   it('counts each hidden gene on its own so the graph is not eight copies of 12.5%', () => {
@@ -40,12 +59,12 @@ describe('outcome Mendelian answers', () => {
 
     const byName = (rows) => Object.fromEntries(rows.map((row) => [row.trait, row.probability]))
     expect(byName(geneInheritanceRows(chicks, 'base_color'))).toEqual({ Green: 0.5, Blue2: 0.5 })
-    expect(byName(geneInheritanceRows(chicks, 'visual_mutation'))).toEqual({ Dilute: 0.5, Normal: 0.5 })
+    expect(byName(geneInheritanceRows(chicks, 'visual_mutation'))).toEqual({ Dilute: 0.5, 'Wild Type': 0.5 })
     expect(byName(geneInheritanceRows(chicks, 'split_gene'))).toEqual({
-      'split NSL Ino': 1,
-      'split Dilute': 0.5,
+      'split NSL Ino': 0.5,
       'split Opaline': 0.5,
-      'split Blue2': 0.5,
+      'split Dilute': 0.25,
+      'split Blue2': 0.25,
     })
     expect(byName(geneInheritanceRows(chicks, 'sex'))).toEqual({ Cock: 0.5, Hen: 0.5 })
   })

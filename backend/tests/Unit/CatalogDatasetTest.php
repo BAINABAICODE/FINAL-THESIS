@@ -45,6 +45,64 @@ class CatalogDatasetTest extends TestCase
         }
     }
 
+    public function test_base_color_codes_follow_published_dark_factor_matrix(): void
+    {
+        $parser = new GeneticCodeParser;
+        $records = BaseColorDataset::records($this->dataPath('base-colors'));
+        $bySpecies = [];
+        foreach ($records as $record) {
+            $bySpecies[$record['scientific_name']][] = $record;
+        }
+
+        $wildTypeOnly = [
+            'Agapornis pullarius',
+            'Agapornis canus',
+            'Agapornis swindernianus',
+        ];
+
+        foreach ($bySpecies as $species => $rows) {
+            $grounds = [];
+            foreach ($rows as $row) {
+                $segments = $parser->parseSegments($row['genetic_code']);
+                $this->assertCount(2, $segments, "{$species} {$row['name']}");
+                $ground = $parser->pairLabel($segments[0]['alleles'][0], $segments[0]['alleles'][1]);
+                $dark = $parser->pairLabel($segments[1]['alleles'][0], $segments[1]['alleles'][1]);
+                $this->assertSame($ground.'|'.$dark, $row['genetic_code'], "{$species} {$row['name']} allele order");
+                $grounds[$ground][$dark] = $row['name'];
+            }
+
+            if (in_array($species, $wildTypeOnly, true)) {
+                $this->assertSame(['bl+/bl+' => ['D+/D+' => 'Green']], $grounds, $species);
+
+                continue;
+            }
+
+            foreach ($grounds as $ground => $darks) {
+                foreach (['D+/D+', 'D+/D', 'D/D'] as $dark) {
+                    $this->assertArrayHasKey($dark, $darks, "{$species} {$ground} is missing {$dark}");
+                }
+            }
+        }
+
+        $rose = array_column($bySpecies['Agapornis roseicollis'], 'name');
+        foreach (['Green', 'Dark Green', 'Olive', 'Aqua', 'Dark Aqua', 'Olive Aqua', 'Turquoise', 'Cobalt', 'Mauve', 'Seagreen', 'Dark Seagreen', 'Olive Seagreen'] as $name) {
+            $this->assertContains($name, $rose);
+        }
+        $this->assertNotContains('Blue', $rose);
+
+        $fischer = array_column($bySpecies['Agapornis fischeri'], 'genetic_code', 'name');
+        $this->assertSame('bl1/bl2|D+/D+', $fischer['Teal']);
+        $this->assertSame('bl1/blaq|D+/D+', $fischer['AquaBlue1']);
+        $this->assertSame('bl2/blaq|D+/D+', $fischer['AquaBlue2']);
+        $this->assertSame('bl+/bl+|D+/D', $fischer['Dark Green']);
+        $this->assertSame('bl+/bl+|D/D', $fischer['Olive']);
+
+        $masked = array_column($bySpecies['Agapornis personatus'], 'genetic_code', 'name');
+        $this->assertSame('bl/bltq|D+/D+', $masked['Turquoise Blue']);
+        $this->assertSame('bl/bl|D+/D', $masked['Cobalt']);
+        $this->assertSame('bl/bl|D/D', $masked['Mauve']);
+    }
+
     public function test_peach_faced_base_colors_carry_scientific_source(): void
     {
         $records = array_values(array_filter(

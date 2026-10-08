@@ -7,6 +7,7 @@ use App\Models\BirdPair;
 use App\Models\BreedingPrediction;
 use App\Models\ComputationResult;
 use App\Services\Birds\BirdRecordPersister;
+use App\Services\Breeding\Rbgia\PedigreeGenotypeInference;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -21,6 +22,7 @@ class BreedingAnalysisService
         private readonly ComputationResultPresenter $presenter,
         private readonly AnalysisPayloadCompressor $compressor,
         private readonly ClutchSimulationService $clutch,
+        private readonly PedigreeGenotypeInference $pedigree,
     ) {}
 
     /**
@@ -54,13 +56,17 @@ class BreedingAnalysisService
                 ]);
             }
 
-            $savedOne->load(['species', 'baseColor', 'visualMutations', 'splitGenes', 'grandparents']);
-            $savedTwo->load(['species', 'baseColor', 'visualMutations', 'splitGenes', 'grandparents']);
+            $savedOne->load(['species', 'baseColor', 'visualMutations', 'splitGenes', 'grandparents.visualMutations', 'grandparents.visualMutation', 'grandparents.splitGenes', 'grandparents.splitGene']);
+            $savedTwo->load(['species', 'baseColor', 'visualMutations', 'splitGenes', 'grandparents.visualMutations', 'grandparents.visualMutation', 'grandparents.splitGenes', 'grandparents.splitGene']);
 
             return [$savedOne, $savedTwo];
         });
 
         [$savedOne, $savedTwo] = $parents;
+        $pedigree = $this->mergePedigree(
+            $this->pedigree->apply($savedOne),
+            $this->pedigree->apply($savedTwo),
+        );
         $validation = $this->validator->validate($savedOne, $savedTwo);
         if (! ($validation['can_predict'] ?? false)) {
             throw ValidationException::withMessages([
@@ -69,6 +75,13 @@ class BreedingAnalysisService
         }
 
         $prediction = $this->predictor->predict($savedOne, $savedTwo, $validation);
+        $prediction['pedigree'] = $pedigree;
+        if ($pedigree['applied'] !== [] || $pedigree['possible'] !== []) {
+            $prediction['confidence_notes'] = array_values(array_merge(
+                $prediction['confidence_notes'] ?? [],
+                array_column(array_merge($pedigree['applied'], $pedigree['possible']), 'message'),
+            ));
+        }
         $compatibility = $validation['compatibility'] ?? [];
         $warnings = $validation['warnings'] ?? [];
         $warningSummary = collect($warnings)->pluck('message')->filter()->implode(' ');
@@ -472,5 +485,18 @@ class BreedingAnalysisService
         }
 
         return array_values(array_unique($normalized));
+    }
+
+    /**
+     * @param  array{applied: list<array<string, string>>, possible: list<array<string, string>>}  $left
+     * @param  array{applied: list<array<string, string>>, possible: list<array<string, string>>}  $right
+     * @return array{applied: list<array<string, string>>, possible: list<array<string, string>>}
+     */
+    private function mergePedigree(array $left, array $right): array
+    {
+        return [
+            'applied' => array_values(array_merge($left['applied'], $right['applied'])),
+            'possible' => array_values(array_merge($left['possible'], $right['possible'])),
+        ];
     }
 }

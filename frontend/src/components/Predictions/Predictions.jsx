@@ -110,7 +110,7 @@ function PairBirdColumn({ parent, fallbackId, role }) {
               </div>
               <div>
                 <dt>Visual Mutation</dt>
-                <dd>{listNames(parent.visual_mutations)}</dd>
+                <dd>{listNames(parent.visual_mutations) === '—' ? 'Wild Type' : listNames(parent.visual_mutations)}</dd>
               </div>
               <div>
                 <dt>Split / Hidden Genes</dt>

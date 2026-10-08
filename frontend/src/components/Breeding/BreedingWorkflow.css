@@ -1126,9 +1126,166 @@ main.breed .breed-card__preview {
   border-bottom: 1px solid var(--panel-line);
 }
 
+.breed--workflow .breed-card__title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
 .breed--workflow .breed-card__head h2 {
   font-size: 1.4rem;
   color: var(--panel-ink);
+}
+
+.breed-role {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.18rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 750;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.breed-role.is-cock {
+  background: #d5e4f6;
+  color: #16345c;
+}
+
+.breed-role.is-hen {
+  background: #f6e0c4;
+  color: #6b3d12;
+}
+
+.breed-sex-lock {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-height: 2.85rem;
+  padding: 0.55rem 0.8rem;
+  border-radius: 0.7rem;
+  font-size: 1.02rem;
+  font-weight: 700;
+}
+
+.breed-sex-lock em {
+  font-style: normal;
+  font-size: 0.72rem;
+  font-weight: 750;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.breed--workflow .breed-card--cock {
+  border-color: #8eafd4;
+  background: linear-gradient(180deg, #e7f0fa 0%, #f6f9fd 38%, #ffffff 100%);
+}
+
+.breed--workflow .breed-card--cock .breed-card__head {
+  border-bottom-color: #c5d6ea;
+}
+
+.breed--workflow .breed-card--cock .breed-sex-lock {
+  background: #dce8f6;
+  border: 1px solid #8eafd4;
+  color: #16345c;
+}
+
+.breed--workflow .breed-card--cock .breed-input input,
+.breed--workflow .breed-card--cock .breed-input select,
+.breed--workflow .breed-card--cock .search-select__trigger {
+  background: #f4f8fd;
+  border-color: #b7cce4;
+}
+
+.breed--workflow .breed-card--cock .breed-input input:focus,
+.breed--workflow .breed-card--cock .breed-input select:focus,
+.breed--workflow .breed-card--cock .search-select__trigger.is-open,
+.breed--workflow .breed-card--cock .search-select__trigger:focus-visible {
+  border-color: #2d5f96;
+  box-shadow: 0 0 0 3px rgba(45, 95, 150, 0.18);
+  outline-color: rgba(45, 95, 150, 0.35);
+}
+
+.breed--workflow .breed-card--cock .breed__btn--soft {
+  border-color: #2d5f96;
+  background: #dce8f6;
+  color: #16345c;
+}
+
+.breed--workflow .breed-card--cock .breed__btn--soft:not(:disabled):hover {
+  background: #cdddf0;
+}
+
+.breed--workflow .breed-card--cock .breed-gp {
+  background: #e7f0fa;
+  border-color: #c5d6ea;
+}
+
+.breed--workflow .breed-card--hen {
+  border-color: #e2bc8c;
+  background: linear-gradient(180deg, #fbf1e4 0%, #fff8f2 38%, #ffffff 100%);
+}
+
+.breed--workflow .breed-card--hen .breed-card__head {
+  border-bottom-color: #ead3b4;
+}
+
+.breed--workflow .breed-card--hen .breed-sex-lock {
+  background: #f8e6d0;
+  border: 1px solid #e2bc8c;
+  color: #6b3d12;
+}
+
+.breed--workflow .breed-card--hen .breed-input input,
+.breed--workflow .breed-card--hen .breed-input select,
+.breed--workflow .breed-card--hen .search-select__trigger {
+  background: #fff8f1;
+  border-color: #e6c7a4;
+}
+
+.breed--workflow .breed-card--hen .breed-input input:focus,
+.breed--workflow .breed-card--hen .breed-input select:focus,
+.breed--workflow .breed-card--hen .search-select__trigger.is-open,
+.breed--workflow .breed-card--hen .search-select__trigger:focus-visible {
+  border-color: #b0702a;
+  box-shadow: 0 0 0 3px rgba(176, 112, 42, 0.18);
+  outline-color: rgba(176, 112, 42, 0.35);
+}
+
+.breed--workflow .breed-card--hen .breed__btn--soft {
+  border-color: #b0702a;
+  background: #f8e6d0;
+  color: #6b3d12;
+}
+
+.breed--workflow .breed-card--hen .breed__btn--soft:not(:disabled):hover {
+  background: #f3d8b8;
+}
+
+.breed--workflow .breed-card--hen .breed-gp {
+  background: #fbf1e4;
+  border-color: #ead3b4;
+}
+
+.breed-split-note {
+  margin: 0;
+  padding: 0.7rem 0.85rem;
+  border-radius: 0.7rem;
+  background: #f8e6d0;
+  color: #6b3d12;
+  font-size: 0.92rem;
+  font-weight: 650;
+}
+
+.breed-modal input[readonly] {
+  background: #f4f1ea;
+  color: #0a1612;
+  cursor: default;
 }
 
 .breed--workflow .breed-status {

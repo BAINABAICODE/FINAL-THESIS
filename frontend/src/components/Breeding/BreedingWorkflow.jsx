@@ -41,22 +41,25 @@ function ageMonthOptions(current) {
 const HINTS = {
   birdId: 'Type a unique name or code for this parent, such as ABC123. The two parents cannot share the same Bird ID.',
   species: 'Choose the lovebird species first. Available colors, mutations, genes, and pairing rules all come from this choice.',
-  sex: 'Choose Cock (Male) or Hen (Female). A pair needs one of each, and sex-linked genes depend on this field.',
+  sexCock: 'Parent 1 is always the cock (male). Only the cock can carry split or hidden genes.',
+  sexHen: 'Parent 2 is always the hen (female). Hens do not carry split or hidden genes.',
   age: 'Select age in months. Choices start at 12 months. Age is used for breeding-safety checks, not Mendelian math.',
   baseColor: 'Pick the documented ground color. RBGIA uses this to calculate how color is inherited.',
   visual: 'Pick one mutation, or a combination this species dataset names. Any other mix stays disabled and cannot be analyzed.',
-  split: 'Pick hidden or split genes the bird carries but may not show. These can still appear in chicks.',
-  grandparents: 'Optional. Add grandparents only if you have them. They help flag close relationships and extra genetic context.',
-  select: 'Load a saved bird from Birds Management. The form fills automatically so you do not retype the profile.',
-  parent1: 'Enter or load the first parent. Required: Bird ID, species, sex, and age.',
-  parent2: 'Enter the other parent. It must be a different bird and the opposite sex.',
+  split: 'Cocks only. Pick hidden or split genes the male carries but may not show. These can still appear in chicks.',
+  grandparents: 'Optional. A gene the grandparents prove is added in full. A gene they only make possible changes the offspring odds by that smaller chance.',
+  selectCock: 'Load a saved cock from Birds Management. Only male birds are listed.',
+  selectHen: 'Load a saved hen from Birds Management. Only female birds are listed.',
+  parent1: 'Enter or load the cock. Required: Bird ID, species, and age. Only this parent can carry split genes.',
+  parent2: 'Enter or load the hen. Required: Bird ID, species, and age. This parent has no split genes.',
   analyze: 'When both sides are complete, Start Analysis checks compatibility and opens the computation result.',
 }
 
 const ASSISTS = {
   birdId: 'Unique label for this parent',
   species: 'Required first — unlocks genetics',
-  sex: 'One cock and one hen in the pair',
+  sexCock: 'Fixed as Cock — Male',
+  sexHen: 'Fixed as Hen — Female',
   age: 'Starts at 12 months',
   baseColor: 'Optional, but needed for a full forecast',
   visual: 'Optional. Only a named dataset combination',
@@ -347,10 +350,10 @@ function speciesLabel(bird) {
 }
 
 const GP_DEFS = [
-  { key: 'paternal_grandfather', title: 'Paternal Grandfather' },
-  { key: 'paternal_grandmother', title: 'Paternal Grandmother' },
-  { key: 'maternal_grandfather', title: 'Maternal Grandfather' },
-  { key: 'maternal_grandmother', title: 'Maternal Grandmother' },
+  { key: 'paternal_grandfather', title: 'Paternal Grandfather', sex: 'cock' },
+  { key: 'paternal_grandmother', title: 'Paternal Grandmother', sex: 'hen' },
+  { key: 'maternal_grandfather', title: 'Maternal Grandfather', sex: 'cock' },
+  { key: 'maternal_grandmother', title: 'Maternal Grandmother', sex: 'hen' },
 ]
 
 function emptyGrandparent() {
@@ -358,16 +361,42 @@ function emptyGrandparent() {
     species_id: null,
     base_color_id: null,
     visual_mutation_ids: [],
+    visual_mutation_id: null,
+    split_gene_ids: [],
     split_gene_id: null,
   }
 }
 
-function emptyParent() {
+function grandparentGeneIds(record) {
+  if (Array.isArray(record?.split_gene_ids) && record.split_gene_ids.length) {
+    return record.split_gene_ids.filter((id) => id !== null && id !== '')
+  }
+  if (Array.isArray(record?.split_genes) && record.split_genes.length) {
+    return record.split_genes.map((gene) => gene.id)
+  }
+  if (record?.split_gene_id) return [record.split_gene_id]
+  return []
+}
+
+function grandparentPayload(record, sex) {
+  const visualIds = record?.visual_mutation_ids || []
+  const splitIds = sex === 'cock' ? grandparentGeneIds(record) : []
+  return {
+    species_id: record?.species_id ?? null,
+    base_color_id: record?.base_color_id ?? null,
+    visual_mutation_ids: visualIds,
+    visual_mutation_id: visualIds[0] ?? null,
+    split_gene_ids: splitIds,
+    split_gene_id: splitIds[0] ?? null,
+  }
+}
+
+function emptyParent(sex = '') {
   return {
     source_bird_id: null,
     bird_id: '',
     species_id: null,
-    sex: '',
+    sex,
     age_months: '',
     base_color_id: null,
     visual_mutation_ids: [],
@@ -449,8 +478,10 @@ function parentPayload(parent) {
     age_months: age,
     base_color_id: parent.base_color_id || null,
     visual_mutation_ids: parent.visual_mutation_ids || [],
-    split_gene_ids: parent.split_gene_ids || [],
-    grandparents: parent.grandparents,
+    split_gene_ids: parent.sex === 'hen' ? [] : parent.split_gene_ids || [],
+    grandparents: Object.fromEntries(
+      GP_DEFS.map(({ key, sex }) => [key, grandparentPayload(parent.grandparents?.[key], sex)]),
+    ),
   }
 }
 
@@ -459,11 +490,15 @@ function birdToParent(bird) {
   GP_DEFS.forEach(({ key }) => {
     const record = bird.grandparents?.[key]
     if (!record) return
+    const visualIds = record.visual_mutation_ids || (record.visual_mutations || []).map((item) => item.id)
+    const splitIds = grandparentGeneIds(record)
     grandparents[key] = {
       species_id: record.species_id ?? null,
       base_color_id: record.base_color_id ?? null,
-      visual_mutation_ids: record.visual_mutation_ids || (record.visual_mutations || []).map((item) => item.id),
-      split_gene_id: record.split_gene_id ?? record.split_genes?.[0]?.id ?? null,
+      visual_mutation_ids: visualIds,
+      visual_mutation_id: visualIds[0] ?? record.visual_mutation_id ?? null,
+      split_gene_ids: splitIds,
+      split_gene_id: splitIds[0] ?? null,
     }
   })
 
@@ -484,7 +519,6 @@ function parentStarted(parent) {
   return Boolean(
     String(parent.bird_id || '').trim() ||
       parent.species_id ||
-      parent.sex ||
       parent.age_months !== '' ||
       parent.base_color_id ||
       parent.visual_mutation_ids?.length ||
@@ -658,8 +692,8 @@ export default function BreedingWorkflow() {
   const [visualMutations, setVisualMutations] = useState([])
   const [splitGenes, setSplitGenes] = useState([])
   const [loadError, setLoadError] = useState('')
-  const [parent1, setParent1] = useState(emptyParent)
-  const [parent2, setParent2] = useState(emptyParent)
+  const [parent1, setParent1] = useState(() => emptyParent('cock'))
+  const [parent2, setParent2] = useState(() => emptyParent('hen'))
   const [fieldErrors, setFieldErrors] = useState({ parent1: {}, parent2: {} })
   const [toasts, setToasts] = useState([])
   const [picker, setPicker] = useState(null)
@@ -838,7 +872,7 @@ export default function BreedingWorkflow() {
         <div className="breed__parents">
             <ParentForm
               title="Parent 1"
-              parentKey="parent1"
+              fixedSex="cock"
               parent={parent1}
               status={parent1Status}
               errors={displayErrors.parent1}
@@ -847,8 +881,9 @@ export default function BreedingWorkflow() {
               visualMutations={visualMutations}
               splitGenes={splitGenes}
               onChange={(next, field) => {
-                setParent1(next)
-                if (field && !parentIssues(next, catalogs, 'Parent 1').fields[field]) clearFieldError('parent1', field)
+                const locked = { ...next, sex: 'cock' }
+                setParent1(locked)
+                if (field && !parentIssues(locked, catalogs, 'Parent 1').fields[field]) clearFieldError('parent1', field)
                 setValidation(null)
                 setPrediction(null)
                 setAnalysisComplete(false)
@@ -857,7 +892,7 @@ export default function BreedingWorkflow() {
             />
             <ParentForm
               title="Parent 2"
-              parentKey="parent2"
+              fixedSex="hen"
               parent={parent2}
               status={parent2Status}
               errors={displayErrors.parent2}
@@ -866,8 +901,9 @@ export default function BreedingWorkflow() {
               visualMutations={visualMutations}
               splitGenes={splitGenes}
               onChange={(next, field) => {
-                setParent2(next)
-                if (field && !parentIssues(next, catalogs, 'Parent 2').fields[field]) clearFieldError('parent2', field)
+                const locked = { ...next, sex: 'hen', split_gene_ids: [] }
+                setParent2(locked)
+                if (field && !parentIssues(locked, catalogs, 'Parent 2').fields[field]) clearFieldError('parent2', field)
                 setValidation(null)
                 setPrediction(null)
                 setAnalysisComplete(false)
@@ -893,16 +929,17 @@ export default function BreedingWorkflow() {
       {picker ? (
         <BirdPicker
           birds={birds}
+          lockedSex={picker === 'parent1' ? 'cock' : 'hen'}
           takenId={picker === 'parent1' ? parent2.source_bird_id : parent1.source_bird_id}
           takenCode={picker === 'parent1' ? parent2.bird_id : parent1.bird_id}
           onClose={() => setPicker(null)}
           onSelect={(bird) => {
             const next = birdToParent(bird)
             if (picker === 'parent1') {
-              setParent1(next)
+              setParent1({ ...next, sex: 'cock' })
               setFieldErrors((current) => ({ ...current, parent1: {} }))
             } else {
-              setParent2(next)
+              setParent2({ ...next, sex: 'hen', split_gene_ids: [] })
               setFieldErrors((current) => ({ ...current, parent2: {} }))
             }
             setValidation(null)
@@ -936,6 +973,7 @@ export default function BreedingWorkflow() {
 
 function ParentForm({
   title,
+  fixedSex,
   parent,
   status,
   errors = {},
@@ -947,14 +985,18 @@ function ParentForm({
   onSelect,
 }) {
   const colors = forSpecies(baseColors, parent.species_id)
-  const mutations = forSpecies(visualMutations, parent.species_id)
-  const genes = genesForParent(splitGenes, parent.species_id, parent.sex)
+  const mutations = forSpecies(visualMutations, parent.species_id).filter((item) => item.name !== 'Wild Type')
+  const sex = fixedSex || parent.sex
+  const allowsSplits = sex === 'cock'
+  const genes = allowsSplits ? genesForParent(splitGenes, parent.species_id, sex) : []
   const started = parentStarted(parent)
   const mini = [
     {
       id: 'basic',
       label: 'Identity',
-      hint: 'Bird ID, species, sex, and age identify this parent and unlock pairing rules.',
+      hint: allowsSplits
+        ? 'Bird ID, species, and age identify the cock. Sex is fixed as male.'
+        : 'Bird ID, species, and age identify the hen. Sex is fixed as female.',
       done: !requiredIssues(parent, title).messages.length,
       active: started,
     },
@@ -962,7 +1004,7 @@ function ParentForm({
       id: 'genetics',
       label: 'Genetics',
       hint: HINTS.baseColor,
-      done: Boolean(parent.base_color_id || parent.visual_mutation_ids.length || parent.split_gene_ids.length),
+      done: Boolean(parent.base_color_id || parent.visual_mutation_ids.length || (allowsSplits && parent.split_gene_ids.length)),
       active: started,
     },
     {
@@ -982,18 +1024,25 @@ function ParentForm({
   const chooseBaseColor = (next) => {
     const color = colors.find((item) => String(item.id) === String(next)) || null
     const mutationIds = keepApplicableMutationIds(parent.visual_mutation_ids, mutations, color)
-    const geneIds = keepCombinableGeneIds(parent.split_gene_ids, genes, {
-      sex: parent.sex,
-      baseColor: color,
-      visualMutations: selectedById(mutations, mutationIds),
-    })
+    const geneIds = allowsSplits
+      ? keepCombinableGeneIds(parent.split_gene_ids, genes, {
+          sex,
+          baseColor: color,
+          visualMutations: selectedById(mutations, mutationIds),
+        })
+      : []
     patch('base_color_id', next, { visual_mutation_ids: mutationIds, split_gene_ids: geneIds })
   }
 
   return (
-    <section className="breed-card">
+    <section className={`breed-card breed-card--${sex === 'hen' ? 'hen' : 'cock'}`}>
       <div className="breed-card__head">
-        <h2>{title}</h2>
+        <div className="breed-card__title">
+          <h2>{title}</h2>
+          <span className={`breed-role is-${sex === 'hen' ? 'hen' : 'cock'}`}>
+            {sex === 'hen' ? 'Hen — Female' : 'Cock — Male'}
+          </span>
+        </div>
         <span className={`breed-status is-${status}`}>{status.replace('-', ' ')}</span>
       </div>
       <ParentProgress items={mini} />
@@ -1001,7 +1050,7 @@ function ParentForm({
         <button type="button" className="breed__btn breed__btn--soft" onClick={onSelect}>
           Select Bird from My Birds
         </button>
-        <FieldHint text={HINTS.select} />
+        <FieldHint text={allowsSplits ? HINTS.selectCock : HINTS.selectHen} />
       </div>
 
       <div className="breed-form">
@@ -1027,7 +1076,7 @@ function ParentForm({
           error={errors.species_id || ''}
           getOptionLabel={optionSpeciesLabel}
           getOptionValue={(option) => option.id}
-          getOptionPreview={(option) => getSpeciesFormPreview(option, parent.sex)}
+          getOptionPreview={(option) => getSpeciesFormPreview(option, sex)}
           allowEmpty={false}
           placeholder="Select species"
           searchPlaceholder="Search species…"
@@ -1041,17 +1090,20 @@ function ParentForm({
               nextMutations,
               nextColor,
             )
-            const geneIds = keepCombinableGeneIds(
-              parent.split_gene_ids,
-              genesForParent(splitGenes, next, parent.sex),
-              {
-                sex: parent.sex,
-                baseColor: nextColor,
-                visualMutations: selectedById(nextMutations, mutationIds),
-              },
-            )
+            const geneIds = allowsSplits
+              ? keepCombinableGeneIds(
+                  parent.split_gene_ids,
+                  genesForParent(splitGenes, next, sex),
+                  {
+                    sex,
+                    baseColor: nextColor,
+                    visualMutations: selectedById(nextMutations, mutationIds),
+                  },
+                )
+              : []
             onChange({
               ...parent,
+              sex,
               species_id: next,
               base_color_id: nextColor?.id ?? null,
               visual_mutation_ids: mutationIds,
@@ -1060,33 +1112,15 @@ function ParentForm({
           }}
         />
 
-        <FieldLabel title="Sex" hint={HINTS.sex} assist={ASSISTS.sex} error={errors.sex} invalid={Boolean(errors.sex)}>
-          <select
-            value={parent.sex}
-            onChange={(event) => {
-              const sex = event.target.value
-              const mutationIds = keepCombinableMutationIds(
-                parent.visual_mutation_ids,
-                forSpecies(visualMutations, parent.species_id),
-                sex,
-              )
-              const color = colors.find((item) => String(item.id) === String(parent.base_color_id)) || null
-              const geneIds = keepCombinableGeneIds(
-                parent.split_gene_ids,
-                genesForParent(splitGenes, parent.species_id, sex),
-                {
-                  sex,
-                  baseColor: color,
-                  visualMutations: selectedById(forSpecies(visualMutations, parent.species_id), mutationIds),
-                },
-              )
-              onChange({ ...parent, sex, split_gene_ids: geneIds, visual_mutation_ids: mutationIds }, 'sex')
-            }}
-          >
-            <option value="">Select sex</option>
-            <option value="hen">Hen — Female</option>
-            <option value="cock">Cock — Male</option>
-          </select>
+        <FieldLabel
+          title="Sex"
+          hint={allowsSplits ? HINTS.sexCock : HINTS.sexHen}
+          assist={allowsSplits ? ASSISTS.sexCock : ASSISTS.sexHen}
+        >
+          <div className="breed-sex-lock" aria-readonly="true">
+            <span>{allowsSplits ? 'Cock — Male' : 'Hen — Female'}</span>
+            <em>Fixed</em>
+          </div>
         </FieldLabel>
 
         <FieldLabel title="Age" hint={HINTS.age} assist={ASSISTS.age} error={errors.age_months} invalid={Boolean(errors.age_months)}>
@@ -1134,8 +1168,9 @@ function ParentForm({
           options={mutations}
           value={parent.visual_mutation_ids}
           error={errors.visual_mutation_ids || ''}
-          allowEmpty={false}
-          placeholder="Select mutation"
+          allowEmpty
+          emptyLabel="Wild Type"
+          placeholder="Wild Type"
           disabled={!parent.species_id}
           searchPlaceholder={parent.species_id ? 'Search mutations…' : 'Select a species first'}
           isOptionDisabled={(option) => {
@@ -1145,46 +1180,52 @@ function ParentForm({
             )
             const ground = visualBlockReason(color, option, selected)
             if (ground) return ground
-            const combination = visualCombinationBlock(option, selected, parent.sex)
+            const combination = visualCombinationBlock(option, selected, sex)
             if (combination) return combination
-            return visualSplitBlock(option, selectedById(genes, parent.split_gene_ids))
+            return allowsSplits ? visualSplitBlock(option, selectedById(genes, parent.split_gene_ids)) : ''
           }}
           onChange={(next) => {
             const color = colors.find((item) => String(item.id) === String(parent.base_color_id)) || null
-            const geneIds = keepCombinableGeneIds(parent.split_gene_ids, genes, {
-              sex: parent.sex,
-              baseColor: color,
-              visualMutations: selectedById(mutations, next),
-            })
-            patch('visual_mutation_ids', next, { split_gene_ids: geneIds })
+            const geneIds = allowsSplits
+              ? keepCombinableGeneIds(parent.split_gene_ids, genes, {
+                  sex,
+                  baseColor: color,
+                  visualMutations: selectedById(mutations, next),
+                })
+              : []
+            patch('visual_mutation_ids', next, { split_gene_ids: geneIds, sex })
           }}
         />
 
-        <SearchableSelect
-          readable
-          multiple
-          label={
-            <>
-              <span>Split / Hidden Genes <FieldHint text={HINTS.split} /></span>
-              <span className="breed-input__assist">{ASSISTS.split}</span>
-            </>
-          }
-          options={genes}
-          value={parent.split_gene_ids}
-          error={errors.split_gene_ids || ''}
-          allowEmpty
-          emptyLabel="None"
-          disabled={!parent.species_id}
-          searchPlaceholder={parent.species_id ? 'Search genes…' : 'Select a species first'}
-          isOptionDisabled={(option) =>
-            splitGeneBlock(option, selectedById(genes, parent.split_gene_ids), {
-              sex: parent.sex,
-              baseColor: colors.find((item) => String(item.id) === String(parent.base_color_id)) || null,
-              visualMutations: selectedById(mutations, parent.visual_mutation_ids),
-            })
-          }
-          onChange={(next) => patch('split_gene_ids', next)}
-        />
+        {allowsSplits ? (
+          <SearchableSelect
+            readable
+            multiple
+            label={
+              <>
+                <span>Split / Hidden Genes <FieldHint text={HINTS.split} /></span>
+                <span className="breed-input__assist">{ASSISTS.split}</span>
+              </>
+            }
+            options={genes}
+            value={parent.split_gene_ids}
+            error={errors.split_gene_ids || ''}
+            allowEmpty
+            emptyLabel="None"
+            disabled={!parent.species_id}
+            searchPlaceholder={parent.species_id ? 'Search genes…' : 'Select a species first'}
+            isOptionDisabled={(option) =>
+              splitGeneBlock(option, selectedById(genes, parent.split_gene_ids), {
+                sex,
+                baseColor: colors.find((item) => String(item.id) === String(parent.base_color_id)) || null,
+                visualMutations: selectedById(mutations, parent.visual_mutation_ids),
+              })
+            }
+            onChange={(next) => patch('split_gene_ids', next, { sex })}
+          />
+        ) : (
+          <p className="breed-split-note">Split / hidden genes apply to the cock only.</p>
+        )}
       </div>
 
       <details className="breed-pedigree">
@@ -1195,6 +1236,7 @@ function ParentForm({
           <GrandparentFields
             key={item.key}
             title={item.title}
+            sex={item.sex}
             value={parent.grandparents[item.key]}
             speciesOptions={speciesOptions}
             baseColors={baseColors}
@@ -1213,11 +1255,33 @@ function ParentForm({
   )
 }
 
-function GrandparentFields({ title, value, speciesOptions, baseColors, visualMutations, splitGenes, onChange }) {
+function mutationsForGrandparent(visualMutations, speciesId) {
+  return forSpecies(visualMutations, speciesId).filter((mutation) => mutation.name !== 'Wild Type')
+}
+
+function GrandparentFields({ title, sex, value, speciesOptions, baseColors, visualMutations, splitGenes, onChange }) {
+  const allowsSplits = sex === 'cock'
+  const colors = forSpecies(baseColors, value.species_id)
+  const mutations = mutationsForGrandparent(visualMutations, value.species_id)
+  const genes = genesForParent(splitGenes, value.species_id, sex)
+  const color = colors.find((item) => String(item.id) === String(value.base_color_id)) || null
+  const selectedMutations = selectedById(mutations, value.visual_mutation_ids)
+  const selectedGenes = selectedById(genes, value.split_gene_ids)
+
+  const keptSplits = (ids, nextColor, nextVisuals) =>
+    allowsSplits
+      ? keepCombinableGeneIds(ids, genes, {
+          sex,
+          baseColor: nextColor,
+          visualMutations: nextVisuals,
+        })
+      : []
+
   return (
     <fieldset className="breed-gp">
       <legend>{title}</legend>
       <SearchableSelect
+        readable
         label="Species"
         options={speciesOptions}
         value={value.species_id}
@@ -1228,25 +1292,126 @@ function GrandparentFields({ title, value, speciesOptions, baseColors, visualMut
         emptyLabel="None"
         searchPlaceholder="Search species…"
         onChange={(next) => {
-          const color = colorForSpeciesDefault(baseColors, next, value.base_color_id)
+          const nextColor = colorForSpeciesDefault(baseColors, next, value.base_color_id)
+          const nextMutations = mutationsForGrandparent(visualMutations, next)
+          const mutationIds = keepApplicableMutationIds(
+            (value.visual_mutation_ids || []).filter((id) =>
+              nextMutations.some((item) => String(item.id) === String(id)),
+            ),
+            nextMutations,
+            nextColor,
+          )
+          const nextVisuals = selectedById(nextMutations, mutationIds)
+          const splitIds = allowsSplits
+            ? keepCombinableGeneIds(value.split_gene_ids, genesForParent(splitGenes, next, sex), {
+                sex,
+                baseColor: nextColor,
+                visualMutations: nextVisuals,
+              })
+            : []
           onChange({
             ...value,
             species_id: next,
-            base_color_id: color?.id ?? null,
-            visual_mutation_ids: [],
-            split_gene_id: null,
+            base_color_id: nextColor?.id ?? null,
+            visual_mutation_ids: mutationIds,
+            visual_mutation_id: mutationIds[0] ?? null,
+            split_gene_ids: splitIds,
+            split_gene_id: splitIds[0] ?? null,
           })
         }}
       />
       <SearchableSelect
+        readable
         label="Base Color"
-        options={forSpecies(baseColors, value.species_id)}
+        options={colors}
         value={value.base_color_id}
         allowEmpty
         emptyLabel="None"
         disabled={!value.species_id}
-        onChange={(next) => onChange({ ...value, base_color_id: next })}
+        searchPlaceholder={value.species_id ? 'Search base colors…' : 'Select a species first'}
+        isOptionDisabled={(option) => baseColorBlock(option, selectedGenes)}
+        onChange={(next) => {
+          const nextColor = colors.find((item) => String(item.id) === String(next)) || null
+          const mutationIds = keepApplicableMutationIds(value.visual_mutation_ids, mutations, nextColor)
+          const nextVisuals = selectedById(mutations, mutationIds)
+          const splitIds = keptSplits(value.split_gene_ids, nextColor, nextVisuals)
+          onChange({
+            ...value,
+            base_color_id: next,
+            visual_mutation_ids: mutationIds,
+            visual_mutation_id: mutationIds[0] ?? null,
+            split_gene_ids: splitIds,
+            split_gene_id: splitIds[0] ?? null,
+          })
+        }}
       />
+      <SearchableSelect
+        readable
+        multiple
+        label={
+          <>
+            <span>Visual Mutation <FieldHint text={HINTS.visual} /></span>
+          </>
+        }
+        options={mutations}
+        value={value.visual_mutation_ids || []}
+        allowEmpty
+        emptyLabel="Wild Type"
+        placeholder="Wild Type"
+        disabled={!value.species_id}
+        searchPlaceholder={value.species_id ? 'Search mutations…' : 'Select a species first'}
+        isOptionDisabled={(option) => {
+          const ground = visualBlockReason(color, option, selectedMutations)
+          if (ground) return ground
+          const combination = visualCombinationBlock(option, selectedMutations, sex)
+          if (combination) return combination
+          return allowsSplits ? visualSplitBlock(option, selectedGenes) : ''
+        }}
+        onChange={(next) => {
+          const nextVisuals = selectedById(mutations, next)
+          const splitIds = keptSplits(value.split_gene_ids, color, nextVisuals)
+          onChange({
+            ...value,
+            visual_mutation_ids: next,
+            visual_mutation_id: next[0] ?? null,
+            split_gene_ids: splitIds,
+            split_gene_id: splitIds[0] ?? null,
+          })
+        }}
+      />
+      {allowsSplits ? (
+        <SearchableSelect
+          readable
+          multiple
+          label={
+            <>
+              <span>Split / Hidden Genes <FieldHint text={HINTS.split} /></span>
+            </>
+          }
+          options={genes}
+          value={value.split_gene_ids || []}
+          allowEmpty
+          emptyLabel="None"
+          disabled={!value.species_id}
+          searchPlaceholder={value.species_id ? 'Search genes…' : 'Select a species first'}
+          isOptionDisabled={(option) =>
+            splitGeneBlock(option, selectedGenes, {
+              sex,
+              baseColor: color,
+              visualMutations: selectedMutations,
+            })
+          }
+          onChange={(next) =>
+            onChange({
+              ...value,
+              split_gene_ids: next,
+              split_gene_id: next[0] ?? null,
+            })
+          }
+        />
+      ) : (
+        <p className="breed-split-note">Split / hidden genes apply to the cock only.</p>
+      )}
     </fieldset>
   )
 }
@@ -1356,7 +1521,7 @@ function ParentSummary({ title, parent }) {
         <div><dt>Sex</dt><dd>{parent.sex_label || '—'}</dd></div>
         <div><dt>Age</dt><dd>{parent.age_months} months</dd></div>
         <div><dt>Base Color</dt><dd>{parent.base_color?.name || 'None recorded'}</dd></div>
-        <div><dt>Visual Mutations</dt><dd>{names(parent.visual_mutations)}</dd></div>
+        <div><dt>Visual Mutations</dt><dd>{(parent.visual_mutations || []).length ? names(parent.visual_mutations) : 'Wild Type'}</dd></div>
         <div><dt>Split/Hidden Genes</dt><dd>{names(parent.split_genes)}</dd></div>
       </dl>
     </div>
@@ -1382,25 +1547,27 @@ function FindingList({ title, items, empty }) {
   )
 }
 
-function BirdPicker({ birds, takenId, takenCode = '', onClose, onSelect }) {
+function BirdPicker({ birds, lockedSex, takenId, takenCode = '', onClose, onSelect }) {
   const [query, setQuery] = useState('')
   const [species, setSpecies] = useState('')
-  const [sex, setSex] = useState('')
+  const sexLabel = lockedSex === 'hen' ? 'Hen — Female' : 'Cock — Male'
+  const sexNoun = lockedSex === 'hen' ? 'female' : 'male'
 
   const speciesOptions = useMemo(() => {
     const map = new Map()
     birds.forEach((bird) => {
+      if (lockedSex && bird.sex !== lockedSex) return
       if (bird.species_id) map.set(String(bird.species_id), speciesLabel(bird))
     })
     return [...map.entries()]
-  }, [birds])
+  }, [birds, lockedSex])
 
   const filtered = birds.filter((bird) => {
+    if (lockedSex && bird.sex !== lockedSex) return false
     const term = query.trim().toLowerCase()
     const hay = `${bird.bird_id} ${speciesLabel(bird)}`.toLowerCase()
     if (term && !hay.includes(term)) return false
     if (species && String(bird.species_id) !== species) return false
-    if (sex && bird.sex !== sex) return false
     return true
   })
 
@@ -1429,24 +1596,22 @@ function BirdPicker({ birds, takenId, takenCode = '', onClose, onSelect }) {
             </select>
           </label>
           <label>
-            Filter by Sex
-            <FieldHint text={HINTS.sex} />
-            <select value={sex} onChange={(event) => setSex(event.target.value)}>
-              <option value="">All</option>
-              <option value="cock">Cock — Male</option>
-              <option value="hen">Hen — Female</option>
-            </select>
+            Sex
+            <FieldHint text={lockedSex === 'hen' ? HINTS.sexHen : HINTS.sexCock} />
+            <input readOnly value={sexLabel} aria-readonly="true" />
           </label>
         </div>
         <ul className="breed-picker">
-          {filtered.length ? null : <li className="breed-picker__empty">No birds match these filters.</li>}
+          {filtered.length ? null : <li className="breed-picker__empty">No {sexNoun} birds match these filters.</li>}
           {filtered.map((bird) => {
             const preview = getSpeciesFormPreview({ id: bird.species_id, common_name: bird.species?.common_name }, bird.sex)
             const taken =
               bird.id === takenId ||
               (takenCode && bird.bird_id.localeCompare(takenCode, undefined, { sensitivity: 'accent' }) === 0)
             const mutations = (bird.visual_mutations || []).map((item) => item?.name).filter(Boolean)
-            const splits = (bird.split_genes || []).map((item) => item?.name).filter(Boolean)
+            const splits = lockedSex === 'cock'
+              ? (bird.split_genes || []).map((item) => item?.name).filter(Boolean)
+              : []
             return (
               <li key={bird.id}>
                 <button

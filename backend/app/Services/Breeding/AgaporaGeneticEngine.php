@@ -108,6 +108,7 @@ class AgaporaGeneticEngine
             'genetic_analysis' => $geneticAnalysis,
             'punnett_square' => $punnett,
             'algorithm' => $algorithm,
+            'pedigree' => $prediction['pedigree'] ?? ['applied' => [], 'possible' => []],
         ];
     }
 
@@ -290,9 +291,6 @@ class AgaporaGeneticEngine
         $hasVisualLocus = collect($prediction['outcomes'] ?? [])->contains(
             fn ($o) => is_array($o) && ($o['category'] ?? null) === 'visual_mutation' && ($o['status'] ?? null) === 'calculated'
         );
-        $hasSplitLocus = collect($prediction['outcomes'] ?? [])->contains(
-            fn ($o) => is_array($o) && ($o['category'] ?? null) === 'split_gene' && ($o['status'] ?? null) === 'calculated'
-        );
 
         foreach ($theoretical as $row) {
             if (! is_array($row)) {
@@ -346,23 +344,28 @@ class AgaporaGeneticEngine
             }
             $visual[$visualKey]['probability'] += $probability;
 
-            $splits = array_values(array_filter($row['split_hidden_genes'] ?? []));
-            $splitLabels = array_map(function ($gene) {
-                $name = (string) $gene;
-                return str_starts_with(strtolower($name), 'split ') ? $name : 'Split '.$name;
-            }, $splits);
-            sort($splitLabels);
-            $splitKey = $splitLabels === [] ? 'Non-carrier' : implode(' + ', $splitLabels);
-            if (! isset($split[$splitKey])) {
-                $split[$splitKey] = [
-                    'trait' => $splitKey,
-                    'category' => 'split_gene',
-                    'expression' => $splitLabels === [] ? 'non_carrier' : 'carrier_split',
-                    'probability' => 0.0,
-                    'fraction' => null,
-                ];
+            $offspringSex = strtolower((string) ($row['sex'] ?? ''));
+            $countSplits = ! in_array($offspringSex, ['hen', 'female'], true);
+            $splits = $countSplits ? array_values(array_filter($row['split_hidden_genes'] ?? [])) : [];
+            if ($countSplits && $splits !== []) {
+                $splitLabels = array_map(function ($gene) {
+                    $name = (string) $gene;
+
+                    return str_starts_with(strtolower($name), 'split ') ? $name : 'Split '.$name;
+                }, $splits);
+                sort($splitLabels);
+                $splitKey = implode(' + ', $splitLabels);
+                if (! isset($split[$splitKey])) {
+                    $split[$splitKey] = [
+                        'trait' => $splitKey,
+                        'category' => 'split_gene',
+                        'expression' => 'carrier_split',
+                        'probability' => 0.0,
+                        'fraction' => null,
+                    ];
+                }
+                $split[$splitKey]['probability'] += $probability;
             }
-            $split[$splitKey]['probability'] += $probability;
 
             $genotype[] = [
                 'trait' => 'Joint genotype',
@@ -410,19 +413,6 @@ class AgaporaGeneticEngine
                 'note' => $hasVisualLocus
                     ? null
                     : 'Neither parent carried a documented visual mutation locus for this pair.',
-            ];
-        }
-
-        if ($split === [] && $theoretical !== []) {
-            $split['__none__'] = [
-                'trait' => 'Non-carrier',
-                'category' => 'split_gene',
-                'expression' => 'non_carrier',
-                'probability' => 1.0,
-                'fraction' => '1/1',
-                'note' => $hasSplitLocus
-                    ? null
-                    : 'Neither parent carried a documented split/hidden gene locus for this pair.',
             ];
         }
 

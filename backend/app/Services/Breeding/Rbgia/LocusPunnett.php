@@ -37,6 +37,133 @@ class LocusPunnett
     }
 
     /**
+     * Gamete weights sum to 1. A possible carrier passes the mutant allele only
+     * on the fraction of gametes the pedigree supports.
+     *
+     * @param  array<string, float>  $cockWeights
+     * @param  array<string, float>  $henWeights  Z alleles for a sex-linked hen; W is not included
+     * @return list<array<string, mixed>>
+     */
+    public function crossWeighted(array $cockWeights, array $henWeights, bool $sexLinked, string $inheritanceType = ''): array
+    {
+        $results = $sexLinked
+            ? $this->weightedSexLinked($cockWeights, $henWeights)
+            : $this->weightedAutosomal($cockWeights, $henWeights);
+
+        foreach ($results as &$row) {
+            $row['expression'] = $this->expressionClass($row['genotype'], $inheritanceType, $sexLinked, $row['sex'] ?? 'both');
+            $row['inheritance_path'] = [
+                'parent_1_gamete_pool' => $sexLinked ? 'Z alleles from cock' : 'diploid gametes from cock',
+                'parent_2_gamete_pool' => $sexLinked ? 'Z from hen (or W for daughters)' : 'diploid gametes from hen',
+                'combination' => $row['genotype'],
+                'pedigree_weighted' => true,
+            ];
+        }
+        unset($row);
+
+        return $results;
+    }
+
+    /**
+     * @param  array<string, float>  $cock
+     * @param  array<string, float>  $hen
+     * @return list<array<string, mixed>>
+     */
+    private function weightedAutosomal(array $cock, array $hen): array
+    {
+        $probabilities = [];
+        $paths = [];
+        foreach ($cock as $left => $leftProbability) {
+            foreach ($hen as $right => $rightProbability) {
+                $probability = (float) $leftProbability * (float) $rightProbability;
+                if ($probability <= 0) {
+                    continue;
+                }
+                $key = $this->parser->pairLabel((string) $left, (string) $right);
+                $probabilities[$key] = ($probabilities[$key] ?? 0) + $probability;
+                $paths[$key][] = ['from_cock' => $left, 'from_hen' => $right];
+            }
+        }
+
+        return $this->weightedRows($probabilities, 'both', $paths);
+    }
+
+    /**
+     * @param  array<string, float>  $cock
+     * @param  array<string, float>  $hen
+     * @return list<array<string, mixed>>
+     */
+    private function weightedSexLinked(array $cock, array $hen): array
+    {
+        $sonProbabilities = [];
+        $daughterProbabilities = [];
+        $sonPaths = [];
+        $daughterPaths = [];
+        foreach ($cock as $cockZ => $cockProbability) {
+            $cockProbability = (float) $cockProbability;
+            if ($cockProbability <= 0) {
+                continue;
+            }
+            foreach ($hen as $henZ => $henProbability) {
+                if (strcasecmp((string) $henZ, 'W') === 0) {
+                    continue;
+                }
+                $probability = 0.5 * $cockProbability * (float) $henProbability;
+                if ($probability <= 0) {
+                    continue;
+                }
+                $key = $this->parser->pairLabel((string) $cockZ, (string) $henZ);
+                $sonProbabilities[$key] = ($sonProbabilities[$key] ?? 0) + $probability;
+                $sonPaths[$key][] = ['from_cock_Z' => $cockZ, 'from_hen_Z' => $henZ, 'sex' => 'cock'];
+            }
+            $daughter = $cockZ.'/W';
+            $daughterProbability = 0.5 * $cockProbability;
+            $daughterProbabilities[$daughter] = ($daughterProbabilities[$daughter] ?? 0) + $daughterProbability;
+            $daughterPaths[$daughter][] = ['from_cock_Z' => $cockZ, 'from_hen' => 'W', 'sex' => 'hen'];
+        }
+
+        return array_merge(
+            $this->weightedRows($sonProbabilities, 'cock', $sonPaths),
+            $this->weightedRows($daughterProbabilities, 'hen', $daughterPaths),
+        );
+    }
+
+    /**
+     * @param  array<string, float>  $probabilities
+     * @param  array<string, list<array<string, mixed>>>  $paths
+     * @return list<array<string, mixed>>
+     */
+    private function weightedRows(array $probabilities, string $sex, array $paths): array
+    {
+        $rows = [];
+        foreach ($probabilities as $genotype => $probability) {
+            $rows[] = [
+                'genotype' => $genotype,
+                'sex' => $sex,
+                'count' => null,
+                'total' => null,
+                'fraction' => $this->probabilityFraction((float) $probability),
+                'probability' => (float) $probability,
+                'gamete_combinations' => $paths[$genotype] ?? [],
+            ];
+        }
+
+        return $rows;
+    }
+
+    private function probabilityFraction(float $probability): string
+    {
+        foreach ([1, 2, 4, 8, 16, 32, 64] as $total) {
+            $count = (int) round($probability * $total);
+            if (abs($probability - ($count / $total)) < 1e-6) {
+                return $this->simplifyFraction($count, max($total, 1));
+            }
+        }
+
+        return rtrim(rtrim(number_format($probability, 4, '.', ''), '0'), '.');
+    }
+
+    /**
      * @param  array{0: string, 1: string}  $cock
      * @param  array{0: string, 1: string}  $hen
      * @return list<array<string, mixed>>

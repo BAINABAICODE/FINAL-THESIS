@@ -1,0 +1,45 @@
+---
+description: Use-case diagram layout and notation for AGAPORA
+alwaysApply: false
+---
+
+# Use Case Diagrams
+
+Draw AGAPORA use cases in PlantUML. Follow these rules exactly.
+
+## Naming and actors
+
+- Name actors with a singular, business-relevant noun that is a **role**, not a person or a job title. Use **Visitor** and **Breeder**.
+- Keep every actor **outside** the `AGAPORA` rectangle.
+- Do not draw a line from one actor to another actor. Generalization is not a conversation: `Breeder --|> Visitor` means Breeder is a kind of Visitor.
+- Place the inheriting actor **below** its parent: Visitor upper left, Breeder directly under Visitor.
+- Name each use case with a **strong verb** plus a domain phrase in Title Case (`Analyze Breeding Pair`, not `Analyze`, not `Analyze a breeding pair`). One oval is one goal offered to an actor, not a screen widget.
+
+## Structure and layout
+
+- One system boundary named `AGAPORA`. Put only **top-level services** to actors inside it.
+- Put primary actors and the earliest top-level use cases in the **top-left**. Stack later goals **under** earlier ones.
+- Do not use packages or extra system boxes unless the figure cannot be read without them.
+- Do not draw validation, blocking, RBGIA, GICA, clutch math, saving, catalogs, or other internal steps. Those belong in the written use-case description.
+- Leave the right side empty unless a secondary actor (an external system) exists.
+
+## Relationships
+
+- Actor to use case: a **solid line with no arrowhead** (`Visitor -- UC_Home`). An arrow would look like data flow.
+- Connect Visitor only to public goals. Connect Breeder only to signed-in goals. Do not also connect Breeder to Visitor’s goals; the generalization already covers them.
+- `A ..> B : <<include>>` — dashed arrow **to** the included use case. A always performs B.
+- `A ..> B : <<extend>>` — dashed arrow **to** the base use case. A runs only under the condition written on the arrow.
+- Generalization: solid line, hollow triangle, child below parent.
+
+```plantuml
+actor "Visitor" as Visitor
+actor "Breeder" as Breeder
+Visitor -[hidden]down- Breeder
+Breeder -up-|> Visitor
+rectangle "AGAPORA" {
+  usecase "View Home Page" as UC_Home
+  usecase "Add Lovebird" as UC_Add
+}
+Visitor -- UC_Home
+Breeder -- UC_Add
+```

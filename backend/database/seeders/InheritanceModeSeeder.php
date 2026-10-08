@@ -68,7 +68,7 @@ class InheritanceModeSeeder extends Seeder
                 'chromosome_model' => 'autosomal',
                 'sex_linked' => false,
                 'punnett_rule' => 'Diploid 2×2 at one locus with two different mutant alleles (for example blaq/bltq).',
-                'expression_rule' => 'Compound heterozygote is a documented visual (Seagreen / AquaTurquoise), not a split.',
+                'expression_rule' => 'Compound heterozygote is a documented visual (Seagreen), not a split.',
                 'scientific_basis' => 'Two alleles of the same locus combine. Not an independent second locus.',
                 'scientific_source' => 'MUTAVI bl locus; aqua + turquoise compound in A. roseicollis',
                 'verification_status' => 'Verified',

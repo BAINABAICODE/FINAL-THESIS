@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react'
 import './BreedingLesson.css'
 
 const LESSON_STEPS = [
+  { id: 'overview', n: '00', engine: 'Look', title: 'Overview', detail: 'Parents and chicks' },
   { id: 'final-output', n: '01', engine: 'Answer', title: 'The result', detail: 'Should you breed them?' },
   { id: 'flow', n: '02', engine: 'Path', title: 'The path', detail: 'RBGIA, then GICA' },
   { id: 'compatibility', n: '03', engine: 'Start', title: 'The two birds', detail: 'Only saved records' },
@@ -10,30 +10,6 @@ const LESSON_STEPS = [
   { id: 'gica', n: '06', engine: 'GICA', title: 'The score', detail: 'Why the points land here' },
   { id: 'forecast', n: '07', engine: 'Nest', title: 'Eggs and hatch', detail: 'An estimate' },
   { id: 'complexity', n: '08', engine: 'Extra', title: 'Work this run did', detail: 'Time and space' },
-]
-
-const RBGIA_BEATS = [
-  { n: '1', title: 'Read the birds', text: 'Color, mutations, and hidden genes already saved. Nothing is invented.' },
-  { n: '2', title: 'Translate the alleles', text: 'Each code becomes a symbol: normal, mutation, or W when that side has no gene.' },
-  { n: '3', title: 'Pass one copy', text: 'Mendel’s Law of Segregation. A parent carries two copies and gives the chick one.' },
-  { n: '4', title: 'Fill the Punnett square', text: 'Cock alleles down the side, hen alleles across the top. Every box is one possible chick.' },
-  { n: '5', title: 'Read the look', text: 'Dominant, recessive, or sex-linked rules turn the letters into what you would see.' },
-  { n: '6', title: 'Count the odds', text: 'Same boxes are grouped. Those fractions are the inheritance result.' },
-]
-
-const GICA_BEATS = [
-  { n: '1', title: 'Use the odds as evidence', text: 'GICA reads the RBGIA chances. It does not redraw the squares.' },
-  { n: '2', title: 'Weigh six factors', text: 'Desirable traits, recessive risk, diversity, mutation load, species fit, and breeding limits.' },
-  { n: '3', title: 'Add to 100', text: 'Each factor has a fixed maximum. Points earned out of that maximum become the score.' },
-  { n: '4', title: 'Say what to do', text: 'The score and the reasons become a breeding recommendation.' },
-]
-
-const WORDS = [
-  { term: 'Allele', meaning: 'One copy of a gene. Each parent gives the chick one allele per gene.' },
-  { term: 'Genotype', meaning: 'The letters. This is the genetic code, not the color you see in the aviary.' },
-  { term: 'Phenotype', meaning: 'The look. What the bird shows for that gene.' },
-  { term: 'Split', meaning: 'A hidden recessive gene. The bird looks normal and can still pass the gene on.' },
-  { term: 'Punnett square', meaning: 'The grid of every way the parents’ alleles can meet.' },
 ]
 
 export function LessonCue({ why, how }) {
@@ -93,126 +69,40 @@ export function MendelianPrimer() {
   )
 }
 
-function BeatList({ items }) {
-  return (
-    <ol className="lesson-beats">
-      {items.map((item) => (
-        <li key={item.n}>
-          <span>{item.n}</span>
-          <div>
-            <p className="lesson-beats__title">{item.title}</p>
-            <p>{item.text}</p>
-          </div>
-        </li>
-      ))}
-    </ol>
-  )
-}
-
 export default function BreedingLesson({
-  parents,
-  scoreText,
-  status,
-  tone = 'muted',
-  recommendation,
+  activeId,
   onJump,
   children,
 }) {
-  const [current, setCurrent] = useState(LESSON_STEPS[0].id)
-
-  useEffect(() => {
-    const nodes = LESSON_STEPS
-      .map((step) => document.getElementById(`process-${step.id}`))
-      .filter(Boolean)
-    if (!nodes.length) return undefined
-    const observer = new IntersectionObserver((entries) => {
-      const visible = entries
-        .filter((entry) => entry.isIntersecting)
-        .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0]
-      if (!visible) return
-      const id = visible.target.id.replace(/^process-/, '')
-      setCurrent(id)
-    }, { rootMargin: '-18% 0px -55% 0px', threshold: [0.12, 0.35] })
-    nodes.forEach((node) => observer.observe(node))
-    return () => observer.disconnect()
-  }, [])
+  const current = activeId || LESSON_STEPS[0].id
 
   const handleJump = (id) => {
-    setCurrent(id)
     onJump?.(id)
   }
 
   return (
     <div className="lesson">
-      <header className="lesson-hero">
-        <div className="lesson-hero__copy">
-          <p className="lesson-hero__kicker">{parents}</p>
-          <h2>How this pair was worked out</h2>
-          <p className="lesson-hero__lede">
-            The result comes first, in plain language. Under it, RBGIA shows how genes pass from these two birds to a chick. GICA then turns those chances into one score. The Punnett squares stay as they are.
-          </p>
-          {recommendation ? <p className="lesson-hero__advice">{recommendation}</p> : null}
-        </div>
-        <p className={`lesson-hero__score is-${tone}`}>
-          <strong>{scoreText}</strong>
-          <span>{status}</span>
-        </p>
-      </header>
-
-      <div className="lesson-engines" aria-label="RBGIA and GICA">
-        <article className="lesson-engine lesson-engine--rbgia">
-          <header>
-            <p className="lesson-engine__mark">RBGIA</p>
-            <h3>How a chick inherits genes</h3>
-            <p>Rule-Based Genetic Inheritance Analysis. This is the Mendelian cross.</p>
-          </header>
-          <BeatList items={RBGIA_BEATS} />
-          <button type="button" onClick={() => handleJump('inheritance')}>
-            Open the Punnett squares
-          </button>
-        </article>
-        <div className="lesson-engines__join" aria-hidden="true">
-          <span>odds stay the same</span>
-        </div>
-        <article className="lesson-engine lesson-engine--gica">
-          <header>
-            <p className="lesson-engine__mark">GICA</p>
-            <h3>Whether this pair should be bred</h3>
-            <p>Genetic Inheritance Compatibility Analysis. This is the score, not a second cross.</p>
-          </header>
-          <BeatList items={GICA_BEATS} />
-          <button type="button" onClick={() => handleJump('gica')}>
-            Open the weights
-          </button>
-        </article>
-      </div>
-
-      <dl className="lesson-words">
-        {WORDS.map((word) => (
-          <div key={word.term}>
-            <dt>{word.term}</dt>
-            <dd>{word.meaning}</dd>
-          </div>
-        ))}
-      </dl>
-
       <nav className="lesson-nav" aria-label="Breeding lesson">
         {LESSON_STEPS.map((step) => {
           const selected = current === step.id
           return (
-            <button
+            <a
               key={step.id}
-              type="button"
+              href={`#process-${step.id}`}
               className={`lesson-nav__btn${selected ? ' is-current' : ''}`}
               aria-current={selected ? 'true' : undefined}
-              onClick={() => handleJump(step.id)}
+              onClick={(event) => {
+                event.preventDefault()
+                handleJump(step.id)
+              }}
             >
               <span className="lesson-nav__n">{step.n}</span>
               <span className="lesson-nav__copy">
                 <span className="lesson-nav__engine">{step.engine}</span>
                 <span className="lesson-nav__title">{step.title}</span>
+                <span className="lesson-nav__detail">{step.detail}</span>
               </span>
-            </button>
+            </a>
           )
         })}
       </nav>

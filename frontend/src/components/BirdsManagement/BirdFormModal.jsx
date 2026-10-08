@@ -16,16 +16,12 @@ const SEX_OPTIONS = [
   { value: 'cock', label: 'Cock — Male' },
 ]
 
-const MAX_AGE_MONTHS = 180
-const AGE_MONTH_OPTIONS = Array.from({ length: MAX_AGE_MONTHS + 1 }, (_, months) => months)
-
-function ageMonthOptions(current) {
-  const extra = Number(current)
-  if (Number.isFinite(extra) && extra > MAX_AGE_MONTHS) {
-    return [...AGE_MONTH_OPTIONS, extra]
-  }
-  return AGE_MONTH_OPTIONS
-}
+const MIN_AGE_MONTHS = 12
+const MAX_AGE_MONTHS = 100
+const AGE_MONTH_OPTIONS = Array.from(
+  { length: MAX_AGE_MONTHS - MIN_AGE_MONTHS + 1 },
+  (_, index) => MIN_AGE_MONTHS + index,
+)
 
 const GRANDPARENT_DEFS = [
   { key: 'paternal_grandfather', title: 'Paternal Grandfather' },
@@ -175,7 +171,9 @@ function visualMutationBlock(option, selected, baseColor, sex, splits) {
 
 function mutationsForSpecies(visualMutations, speciesId) {
   if (!speciesId) return []
-  return visualMutations.filter((mutation) => String(mutation.species_id) === String(speciesId))
+  return visualMutations.filter((mutation) =>
+    String(mutation.species_id) === String(speciesId) && mutation.name !== 'Wild Type',
+  )
 }
 
 function mutationIdsFromRecord(record) {
@@ -209,6 +207,10 @@ function GrandparentFields({
   splitGenes,
   errors = {},
 }) {
+  const allowsSplits = sex !== 'hen'
+  const splitIds = (ids, speciesId, color, visuals) =>
+    allowsSplits ? keepGeneIds(ids, splitGenes, speciesId, sex, color, visuals) : []
+
   return (
     <fieldset className="bird-modal__grandparent">
       <legend className="bird-modal__grandparent-title">{title}</legend>
@@ -232,7 +234,7 @@ function GrandparentFields({
               base_color_id: color?.id ?? null,
               visual_mutation_ids: mutationIds,
               visual_mutation_id: mutationIds[0] ?? null,
-              split_gene_ids: keepGeneIds(value.split_gene_ids, splitGenes, next, sex, color, selectedVisuals),
+              split_gene_ids: splitIds(value.split_gene_ids, next, color, selectedVisuals),
               split_gene_id: null,
             })
           }}
@@ -259,14 +261,7 @@ function GrandparentFields({
               base_color_id: next,
               visual_mutation_ids: mutationIds,
               visual_mutation_id: mutationIds[0] ?? null,
-              split_gene_ids: keepGeneIds(
-                value.split_gene_ids,
-                splitGenes,
-                value.species_id,
-                sex,
-                color,
-                selectedVisuals,
-              ),
+              split_gene_ids: splitIds(value.split_gene_ids, value.species_id, color, selectedVisuals),
               split_gene_id: null,
             })
           }}
@@ -291,14 +286,7 @@ function GrandparentFields({
               ...value,
               visual_mutation_ids: next,
               visual_mutation_id: next[0] ?? null,
-              split_gene_ids: keepGeneIds(
-                value.split_gene_ids,
-                splitGenes,
-                value.species_id,
-                sex,
-                color,
-                selectedVisuals,
-              ),
+              split_gene_ids: splitIds(value.split_gene_ids, value.species_id, color, selectedVisuals),
               split_gene_id: null,
             })
           }}
@@ -312,11 +300,12 @@ function GrandparentFields({
             )
           }
           allowEmpty
-          emptyLabel="None"
+          emptyLabel="Wild Type"
           disabled={!value.species_id}
           searchPlaceholder={value.species_id ? 'Search mutations…' : 'Select a species first'}
           error={errors.visual_mutation_ids || errors.visual_mutation_id}
         />
+        {allowsSplits ? (
         <SearchableSelect
           readable
           multiple
@@ -351,6 +340,7 @@ function GrandparentFields({
           searchPlaceholder={value.species_id ? 'Search genes…' : 'Select a species first'}
           error={errors.split_gene_ids || errors.split_gene_id}
         />
+        ) : null}
       </div>
     </fieldset>
   )
@@ -440,7 +430,14 @@ export default function BirdFormModal({
 
     const localErrors = {}
     if (!String(form.bird_id).trim()) localErrors.bird_id = ['Bird ID is required.']
-    if (form.age_months === '' || form.age_months === null) localErrors.age_months = ['Age is required.']
+    if (form.age_months === '' || form.age_months === null) {
+      localErrors.age_months = ['Age is required.']
+    } else {
+      const age = Number(form.age_months)
+      if (!Number.isInteger(age) || age < MIN_AGE_MONTHS || age > MAX_AGE_MONTHS) {
+        localErrors.age_months = ['Age must be from 12 to 100 months.']
+      }
+    }
     if (!form.species_id) localErrors.species_id = ['Species is required.']
     if (!form.sex) localErrors.sex = ['Sex is required.']
 
@@ -458,20 +455,23 @@ export default function BirdFormModal({
       base_color_id: form.base_color_id || null,
       visual_mutation_id: form.visual_mutation_ids?.[0] || null,
       visual_mutation_ids: form.visual_mutation_ids || [],
-      split_gene_id: form.split_gene_ids?.[0] || null,
-      split_gene_ids: form.split_gene_ids || [],
+      split_gene_id: form.sex === 'hen' ? null : form.split_gene_ids?.[0] || null,
+      split_gene_ids: form.sex === 'hen' ? [] : form.split_gene_ids || [],
       grandparents: Object.fromEntries(
         GRANDPARENT_DEFS.map(({ key }) => {
           const gp = form.grandparents[key]
           const mutationIds = keepMutationIdsForSpecies(gp.visual_mutation_ids, visualMutations, gp.species_id)
-          const geneIds = keepGeneIds(
-            gp.split_gene_ids,
-            splitGenes,
-            gp.species_id,
-            sexForGrandparent(key),
-            colorForSelection(baseColors, gp.species_id, gp.base_color_id),
-            selectedMutationsFor(visualMutations, gp.species_id, mutationIds),
-          )
+          const gpSex = sexForGrandparent(key)
+          const geneIds = gpSex === 'hen'
+            ? []
+            : keepGeneIds(
+                gp.split_gene_ids,
+                splitGenes,
+                gp.species_id,
+                gpSex,
+                colorForSelection(baseColors, gp.species_id, gp.base_color_id),
+                selectedMutationsFor(visualMutations, gp.species_id, mutationIds),
+              )
           return [
             key,
             {
@@ -557,7 +557,7 @@ export default function BirdFormModal({
                     onChange={(event) => updateField('age_months', event.target.value)}
                   >
                     <option value="">Select age</option>
-                    {ageMonthOptions(form.age_months).map((months) => (
+                    {AGE_MONTH_OPTIONS.map((months) => (
                       <option key={months} value={String(months)}>
                         {months} {months === 1 ? 'month' : 'months'}
                       </option>
@@ -582,14 +582,16 @@ export default function BirdFormModal({
                       speciesMutations,
                       color,
                     )
-                    const geneIds = keepGeneIds(
-                      form.split_gene_ids,
-                      splitGenes,
-                      next,
-                      form.sex,
-                      color,
-                      selectedMutationsFor(visualMutations, next, mutationIds),
-                    )
+                    const geneIds = form.sex === 'hen'
+                      ? []
+                      : keepGeneIds(
+                          form.split_gene_ids,
+                          splitGenes,
+                          next,
+                          form.sex,
+                          color,
+                          selectedMutationsFor(visualMutations, next, mutationIds),
+                        )
                     setForm((prev) => ({
                       ...prev,
                       species_id: next,
@@ -622,14 +624,16 @@ export default function BirdFormModal({
                       const mutations = mutationsForSpecies(visualMutations, form.species_id)
                       const mutationIds = keepCombinableMutationIds(form.visual_mutation_ids, mutations, nextSex)
                       const color = colorForSelection(baseColors, form.species_id, form.base_color_id)
-                      const geneIds = keepGeneIds(
-                        form.split_gene_ids,
-                        splitGenes,
-                        form.species_id,
-                        nextSex,
-                        color,
-                        selectedMutationsFor(visualMutations, form.species_id, mutationIds),
-                      )
+                      const geneIds = nextSex === 'hen'
+                        ? []
+                        : keepGeneIds(
+                            form.split_gene_ids,
+                            splitGenes,
+                            form.species_id,
+                            nextSex,
+                            color,
+                            selectedMutationsFor(visualMutations, form.species_id, mutationIds),
+                          )
                       setForm((prev) => ({
                         ...prev,
                         sex: nextSex,
@@ -659,14 +663,16 @@ export default function BirdFormModal({
                     const color = colorForSelection(baseColors, form.species_id, next)
                     const mutations = mutationsForSpecies(visualMutations, form.species_id)
                     const mutationIds = keepApplicableMutationIds(form.visual_mutation_ids, mutations, color)
-                    const geneIds = keepGeneIds(
-                      form.split_gene_ids,
-                      splitGenes,
-                      form.species_id,
-                      form.sex,
-                      color,
-                      selectedMutationsFor(visualMutations, form.species_id, mutationIds),
-                    )
+                    const geneIds = form.sex === 'hen'
+                      ? []
+                      : keepGeneIds(
+                          form.split_gene_ids,
+                          splitGenes,
+                          form.species_id,
+                          form.sex,
+                          color,
+                          selectedMutationsFor(visualMutations, form.species_id, mutationIds),
+                        )
                     setForm((prev) => ({
                       ...prev,
                       base_color_id: next,
@@ -696,14 +702,16 @@ export default function BirdFormModal({
                   value={form.visual_mutation_ids}
                   onChange={(next) => {
                     const color = colorForSelection(baseColors, form.species_id, form.base_color_id)
-                    const geneIds = keepGeneIds(
-                      form.split_gene_ids,
-                      splitGenes,
-                      form.species_id,
-                      form.sex,
-                      color,
-                      selectedMutationsFor(visualMutations, form.species_id, next),
-                    )
+                    const geneIds = form.sex === 'hen'
+                      ? []
+                      : keepGeneIds(
+                          form.split_gene_ids,
+                          splitGenes,
+                          form.species_id,
+                          form.sex,
+                          color,
+                          selectedMutationsFor(visualMutations, form.species_id, next),
+                        )
                     setForm((prev) => ({
                       ...prev,
                       visual_mutation_ids: next,
@@ -722,12 +730,13 @@ export default function BirdFormModal({
                     )
                   }
                   allowEmpty
-                  emptyLabel="None"
+                  emptyLabel="Wild Type"
                   disabled={!form.species_id}
                   searchPlaceholder={form.species_id ? 'Search mutations…' : 'Select a species first'}
                   error={firstError('visual_mutation_ids') || firstError('visual_mutation_id')}
                 />
 
+                {form.sex === 'hen' ? null : (
                 <div className="bird-modal__span-2">
                   <SearchableSelect
                     readable
@@ -766,6 +775,7 @@ export default function BirdFormModal({
                     error={firstError('split_gene_ids') || firstError('split_gene_id')}
                   />
                 </div>
+                )}
               </div>
             </section>
 

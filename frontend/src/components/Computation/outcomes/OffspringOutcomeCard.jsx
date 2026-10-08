@@ -1,5 +1,5 @@
 import { GenotypeBadge, ModeBadge, ProbabilityBar, SexBadge } from '../shared/primitives'
-import { breedingOutcome, outcomeBaseColor, outcomeSplit, outcomeVisual, percentText } from '../shared/format'
+import { breedingOutcome, inheritsSplitGenes, outcomeBaseColor, outcomeSplit, outcomeVisual, percentText } from '../shared/format'
 import { resolveInheritanceMode } from '../../../services/genetics'
 import PhenotypeMap from '../inheritance/PhenotypeMap'
 
@@ -29,17 +29,17 @@ function inheritanceSummary(row) {
   return [...modes.values()]
 }
 
-function passLabel(expression) {
+function passLabel(expression, maleSplits) {
   const value = String(expression || '')
   if (value.startsWith('visual')) return 'Visual'
-  if (value === 'carrier_split') return 'Split / hidden'
+  if (value === 'carrier_split') return maleSplits ? 'Split / hidden' : 'Not inherited'
   if (value === 'non_carrier' || value === 'hemizygous_wild') return 'Not carried'
   if (value === 'female') return 'Hen (ZW)'
   if (value === 'male') return 'Cock (ZZ)'
   return value ? value.replace(/_/g, ' ') : 'Stored result'
 }
 
-function PassedFromParents({ rows }) {
+function PassedFromParents({ rows, maleSplits }) {
   const list = rows || []
   if (!list.length) return <span className="gx-muted">Alleles passed by each parent were not stored for this outcome.</span>
   return (
@@ -48,7 +48,7 @@ function PassedFromParents({ rows }) {
         <li key={`${item.locus}-${item.chick_genotype}`}>
           <span className="gx-passed__locus">{item.locus}</span>
           <span>cock <code>{item.from_cock || '—'}</code> · hen <code>{item.from_hen || '—'}</code></span>
-          <strong>{passLabel(item.expression)}</strong>
+          <strong>{passLabel(item.expression, maleSplits)}</strong>
         </li>
       ))}
     </ul>
@@ -57,11 +57,13 @@ function PassedFromParents({ rows }) {
 
 function geneticExplanation(row) {
   const dark = row.darkFactor && row.darkFactor !== 'none' ? ` Dark factor ${row.darkFactor}.` : ''
-  return `${breedingOutcome(row)}.${dark} That is the chick expected from the alleles these parents pass. Hidden genes are splits and are not seen on the bird.`
+  const splitNote = inheritsSplitGenes(row) ? '' : ' Split genes are calculated for the cock only.'
+  return `${breedingOutcome(row)}.${dark} That is the chick expected from the alleles these parents pass.${splitNote}`
 }
 
 export default function OffspringOutcomeCard({ row, rank }) {
   const modes = inheritanceSummary(row)
+  const maleSplits = inheritsSplitGenes(row)
   return (
     <article className="gx-card" aria-labelledby={`outcome-${row.id}-title`}>
       <header className="gx-card__head">
@@ -84,10 +86,12 @@ export default function OffspringOutcomeCard({ row, rank }) {
           <dt>Visual mutation</dt>
           <dd>{outcomeVisual(row)}</dd>
         </div>
-        <div>
-          <dt>Split / hidden</dt>
-          <dd>{outcomeSplit(row)}</dd>
-        </div>
+        {outcomeSplit(row) ? (
+          <div>
+            <dt>Split / hidden</dt>
+            <dd>{outcomeSplit(row)}</dd>
+          </div>
+        ) : null}
         <div>
           <dt>Genotype</dt>
           <dd><LociGenotype genotype={row.genotype} /></dd>
@@ -111,7 +115,7 @@ export default function OffspringOutcomeCard({ row, rank }) {
         <div>
           <dt>Passed from parents</dt>
           <dd>
-            <PassedFromParents rows={row.passedFromParents || row.passed_from_parents} />
+            <PassedFromParents rows={row.passedFromParents || row.passed_from_parents} maleSplits={maleSplits} />
             <p className="gx-note">Each parent passes one allele. Separate genes assort independently. Sex-linked alleles travel on the Z chromosome.</p>
           </dd>
         </div>

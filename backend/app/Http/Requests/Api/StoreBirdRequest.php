@@ -78,7 +78,7 @@ class StoreBirdRequest extends FormRequest
                     ->where(fn ($query) => $query->where('user_id', $this->user()?->id))
                     ->ignore($birdId),
             ],
-            'age_months' => ['required', 'integer', 'min:0', 'max:600'],
+            'age_months' => ['required', 'integer', 'min:12', 'max:100'],
             'species_id' => ['required', 'integer', 'exists:lovebird_species,id'],
             'sex' => ['required', 'string', Rule::in([Bird::SEX_HEN, Bird::SEX_COCK])],
             'base_color_id' => ['nullable', 'integer', 'exists:base_colors,id'],

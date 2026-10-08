@@ -16,16 +16,27 @@ import AlleleTranslation from './inheritance/AlleleTranslation'
 import PunnettSquare from './inheritance/PunnettSquare'
 import PhenotypeMap from './inheritance/PhenotypeMap'
 import PairInheritanceBoard from './inheritance/PairInheritanceBoard'
+import GeneActionBoard from './inheritance/GeneActionBoard'
 import ClutchSimulationPanel from './outcomes/ClutchSimulationPanel'
+import EggInheritance from './outcomes/EggInheritance'
+import EggMutationMedia from './outcomes/EggMutationMedia'
+import PairOverview from './outcomes/PairOverview'
 import { eggStatusShort, eggStatusTone, isLivingEgg } from './outcomes/eggStatus'
 import { StatusPill } from './shared/primitives'
-import { barColor, breedingOutcome, geneInheritanceRows, outcomeBaseColor, outcomeSplit, outcomeVisual, percentText } from './shared/format'
+import { barColor, breedingOutcome, geneInheritanceRows, inheritsSplitGenes, outcomeBaseColor, outcomeSplit, outcomeVisual, percentText } from './shared/format'
 import { attachHeadToTail, buildCompatibilityModel, buildComplexityReport, buildRbgiaTrace, translateGenotype } from '../../services/genetics'
 import '../Breeding/BreedingWorkflow.css'
 import './CompatibilityModule.css'
 import './ComputationResult.css'
 
 const RESULT_SECTIONS = [
+  {
+    id: 'overview',
+    n: '00',
+    label: 'Overview',
+    hint: 'Parents and chicks',
+    proves: 'Each chick is a card with a large photo. The first bar is that chick’s share of the nest. The bars under it are the chance of each trait, and which parent passed it.',
+  },
   {
     id: 'final-output',
     n: '01',
@@ -107,18 +118,37 @@ function displayText(value) {
   return '—'
 }
 
+function storedColor(value) {
+  if (typeof value !== 'string') return value || null
+  const text = value.trim()
+  if (!text || /^not recorded$/i.test(text)) return null
+  return text
+}
+
 function chickFacts(egg) {
   const traits = egg?.collected_traits || {}
   return {
     ...egg,
     ...traits,
-    base_color: traits.base_color || egg?.base_color,
+    egg_number: egg?.egg_number ?? traits.egg_number,
+    base_color: storedColor(traits.base_color) || storedColor(egg?.base_color),
     visual_mutations: traits.visual_mutations?.length ? traits.visual_mutations : egg?.visual_mutations,
-    split_hidden_genes: traits.split_hidden_genes?.length
-      ? traits.split_hidden_genes
-      : (egg?.split_hidden_genes || egg?.split_genes),
+    split_hidden_genes: inheritsSplitGenes(egg)
+      ? (traits.split_hidden_genes?.length
+        ? traits.split_hidden_genes
+        : (egg?.split_hidden_genes || egg?.split_genes))
+      : [],
     passed_from_parents: egg?.passed_from_parents || traits.passed_from_parents,
   }
+}
+
+function isAbsentSplit(row) {
+  const text = String(row?.trait || row?.name || '').trim().toLowerCase()
+  return text === 'not split' || text === 'non-carrier' || text === 'non carrier'
+}
+
+function cockSplitRows(rows) {
+  return (rows || []).filter((row) => !isAbsentSplit(row))
 }
 
 function mendelianDistribution(stored, chicks, answerOf, category) {
@@ -144,8 +174,9 @@ function listOrDash(items) {
   return names.length ? names.join(', ') : 'None calculated'
 }
 
-function passedSummary(rows) {
+function passedSummary(rows, chick) {
   if (!rows?.length) return '—'
+  const maleSplits = inheritsSplitGenes(chick)
   return rows
     .filter((row) => row?.locus)
     .map((row) => {
@@ -153,7 +184,7 @@ function passedSummary(rows) {
       const kind = look.startsWith('visual')
         ? 'visual'
         : look === 'carrier_split'
-          ? 'split'
+          ? (maleSplits ? 'split' : 'not inherited')
           : look === 'non_carrier' || look === 'hemizygous_wild'
             ? 'not carried'
             : look.replace(/_/g, ' ')
@@ -253,7 +284,7 @@ function outcomeFlags(row) {
   }
   const direct = classifyInheritance(row.inheritance_type)
   if (direct) flags[direct] = true
-  if ((row.split_hidden_genes || []).length) flags.recessive = true
+  if (inheritsSplitGenes(row) && (row.split_hidden_genes || []).length) flags.recessive = true
   return flags
 }
 
@@ -355,6 +386,61 @@ function parseTraitBadges(items = []) {
   })
 }
 
+function plainColorName(value) {
+  let text = String(value || '').trim()
+  if (!text) return ''
+  text = text.replace(/\s+expression$/i, '')
+  const wrapped = text.match(/ground color \(([^)]+)\)/i)
+  return wrapped ? wrapped[1] : text
+}
+
+function joinNames(items) {
+  const names = (items || []).map((item) => (typeof item === 'string' ? item : item?.name)).filter(Boolean)
+  return names.length ? names.join(' · ') : 'None'
+}
+
+function colorOutcomeLabel(row) {
+  const phenotype = plainColorName(row.phenotype || row.base_color)
+  if (phenotype && phenotype.length <= 42 && !/not specified/i.test(phenotype)) return phenotype
+  const meaning = {
+    non_carrier: 'Wild type',
+    carrier_split: 'Hidden',
+    visual: 'Shows',
+    visual_single_factor: 'Shows once',
+    visual_double: 'Shows stronger',
+  }[row.expression]
+  return meaning || row.genotype || 'Outcome'
+}
+
+const TRAIT_GROUPS = [
+  ['Color', (badge) => /base color/i.test(badge.kind)],
+  ['Shows', (badge) => /visual mutation/i.test(badge.kind)],
+  ['Hidden', (badge) => /split/i.test(badge.kind)],
+]
+
+function TraitGroups({ badges }) {
+  if (!badges.length) return <p className="compute-result__empty">None recorded</p>
+  const used = new Set()
+  const groups = TRAIT_GROUPS.map(([label, test]) => {
+    const items = badges.filter((badge) => test(badge))
+    items.forEach((badge) => used.add(badge))
+    return { label, items }
+  }).filter((group) => group.items.length)
+  const rest = badges.filter((badge) => !used.has(badge))
+  if (rest.length) groups.push({ label: 'Other', items: rest })
+
+  return (
+    <dl className="inherit-lines">
+      {groups.map((group) => (
+        <div key={group.label}>
+          <dt>{group.label}</dt>
+          <dd>{group.items.map((item) => (group.label === 'Hidden' ? item.value.replace(/^split\s+/i, '') : item.value)).join(' · ')}</dd>
+        </div>
+      ))}
+    </dl>
+  )
+}
+
 function forecastIsDocumented(value) {
   if (value == null || value === '') return false
   return !String(value).toLowerCase().includes('not documented')
@@ -394,12 +480,12 @@ function ProvesNote({ sectionId }) {
   )
 }
 
-function ResultBlock({ title, children, eyebrow, sectionId }) {
+function ResultBlock({ title, children, eyebrow, sectionId, showHeading = true, showNote = true }) {
   return (
     <section id={sectionId ? `process-${sectionId}` : undefined} className="compute-result__card compute-section-panel">
       {eyebrow ? <p className="compute-result__eyebrow">{eyebrow}</p> : null}
-      <h2>{title}</h2>
-      <ProvesNote sectionId={sectionId} />
+      {showHeading ? <h2>{title}</h2> : null}
+      {showHeading && showNote ? <ProvesNote sectionId={sectionId} /> : null}
       {children}
     </section>
   )
@@ -410,7 +496,7 @@ function unavailableReasonFor(probabilities, category) {
   return hit?.reason || null
 }
 
-function DistributionPanel({ title, rows, nameResolver, unavailableReason }) {
+function DistributionPanel({ title, rows, nameResolver, unavailableReason, showCode = true }) {
   const sorted = useMemo(() => sortByProbability(rows), [rows])
 
   if (!sorted.length) {
@@ -451,7 +537,7 @@ function DistributionPanel({ title, rows, nameResolver, unavailableReason }) {
                 <span className="compute-prob-row__name">{name}</span>
                 <span className="compute-prob-row__pct">{formatPercent(pct)}</span>
               </div>
-              {genotype ? <p className="compute-prob-row__genotype">Code: {genotype} · Means: {translateGenotype(genotype, row.locus || row.trait)}</p> : null}
+              {showCode && genotype ? <p className="compute-prob-row__genotype">Code: {genotype} · Means: {translateGenotype(genotype, row.locus || row.trait)}</p> : null}
               <ProgressBar percent={pct} color={barColor(name, index)} />
               {row.fraction ? <p className="compute-prob-row__fraction">{row.fraction} of all calculated chicks</p> : null}
             </li>
@@ -504,7 +590,7 @@ function gicaTone(score) {
   return 'poor'
 }
 
-function CompatibilityScoreCard({ score, status, summary }) {
+function CompatibilityScoreCard({ score, status, summary, onGenerate }) {
   const pct = score == null ? null : Math.max(0, Math.min(100, Math.round(score)))
   const tone = gicaTone(score)
   return (
@@ -530,6 +616,11 @@ function CompatibilityScoreCard({ score, status, summary }) {
       </div>
       <p className="thesis-score-card__rating">{status}</p>
       {summary ? <p className="thesis-score-card__summary">{summary}</p> : null}
+      {onGenerate ? (
+        <button type="button" className="thesis-report-btn" onClick={onGenerate}>
+          Generate Report
+        </button>
+      ) : null}
     </article>
   )
 }
@@ -581,7 +672,7 @@ function ParentBirdColumn({ label, parent, fallback }) {
         </div>
         <div><dt>Sex</dt><dd>{sex}</dd></div>
         <div><dt>Base Color</dt><dd>{parent?.base_color?.name || displayText(parent?.base_color)}</dd></div>
-        <div><dt>Visual Mutation</dt><dd>{listOrDash(parent?.visual_mutations)}</dd></div>
+        <div><dt>Visual Mutation</dt><dd>{parent?.visual_mutations?.length ? listOrDash(parent.visual_mutations) : 'Wild Type'}</dd></div>
         <div><dt>Split / Hidden Genes</dt><dd>{listOrDash(parent?.split_genes)}</dd></div>
       </dl>
     </div>
@@ -610,6 +701,52 @@ function InheritanceTag({ kind }) {
   return <span className={`thesis-tag is-${kind}`}>{labels[kind] || kind}</span>
 }
 
+function OverviewSection({
+  pair,
+  species,
+  eggs,
+  parentSnapshot,
+  speciesId,
+  locusOutcomes,
+}) {
+  const parent1 = pair?.parent_1 || species.parent_1 || {}
+  const parent2 = pair?.parent_2 || species.parent_2 || {}
+  const chicks = useMemo(() => (
+    [...eggs]
+      .filter(isLivingEgg)
+      .sort((a, b) => Number(a.egg_number) - Number(b.egg_number))
+      .map((egg) => chickFacts(egg))
+  ), [eggs])
+
+  return (
+    <ResultBlock
+      title="Parents and chicks"
+      eyebrow="Overview"
+      sectionId="overview"
+      showNote={false}
+    >
+      <PairOverview
+        parentSnapshot={parentSnapshot}
+        parent1Fallback={parent1}
+        parent2Fallback={parent2}
+        chicks={chicks}
+        speciesId={speciesId}
+        locusOutcomes={locusOutcomes}
+      />
+    </ResultBlock>
+  )
+}
+
+function parentAlleleLine(parent, alleles, fallback) {
+  const sex = String(parent?.sex_label || parent?.sex || '').toLowerCase()
+  const who = sex.includes('cock') || sex === 'male'
+    ? 'Cock'
+    : sex.includes('hen') || sex === 'female'
+      ? 'Hen'
+      : fallback
+  return `${who} ${alleles || '—'}`
+}
+
 function FinalSystemOutputSection({
   pair,
   species,
@@ -617,7 +754,6 @@ function FinalSystemOutputSection({
   gicaScore,
   probabilities,
   eggs,
-  confidence,
   parentSnapshot,
   compact = false,
 }) {
@@ -628,8 +764,6 @@ function FinalSystemOutputSection({
   const breakdown = pair?.breakdown || gica.breakdown || []
   const risk = pair?.risk || gica.risk || null
   const diversity = pair?.diversity || gica.diversity || null
-  const mutationCompat = pair?.mutation_compatibility || gica.mutation_compatibility || null
-  const finalAnalysis = pair?.final_analysis || {}
   const parent1 = pair?.parent_1 || species.parent_1 || {}
   const parent2 = pair?.parent_2 || species.parent_2 || {}
 
@@ -644,16 +778,12 @@ function FinalSystemOutputSection({
 
   return (
     <ResultBlock
-      title="Should you breed this pair?"
       eyebrow="01 · The result"
       sectionId="final-output"
+      showHeading={false}
     >
-      <LessonCue
-        why="A beginner needs the decision before the squares. The score is one number. The reasons under it say which genes helped and which ones to watch."
-        how="GICA adds the weighted points from the RBGIA odds. Scroll on to see the Punnett squares that produced those odds, then the weights that produced this score."
-      />
       <p className="thesis-thesis-line">
-        {pair?.thesis_statement || 'Genetic Pair Compatibility Analysis of lovebird pair compatibility using rule-based genetic inheritance (GICA + RBGIA).'}
+        This score says how well these two birds fit. The notes below say what raised it and what to watch.
       </p>
 
       <div className="thesis-final">
@@ -662,6 +792,15 @@ function FinalSystemOutputSection({
             score={score}
             status={status}
             summary={pair?.summary || gica.summary || null}
+            onGenerate={() => downloadBreedingReport({
+              pair,
+              species,
+              gica,
+              gicaScore: score,
+              eggs,
+              probabilities,
+              recommendation,
+            })}
           />
           <ParentBirdsCard
             parentSnapshot={parentSnapshot}
@@ -674,7 +813,7 @@ function FinalSystemOutputSection({
           <article className="thesis-report__card" aria-labelledby="thesis-why-title">
             <header className="thesis-report__head">
               <h3 className="thesis-report__title" id="thesis-why-title">Why this pair received this score</h3>
-              <p className="thesis-report__subtitle">Compatibility Explanation</p>
+              <p className="thesis-report__subtitle">What helped, and what to watch.</p>
             </header>
 
             <section className="thesis-report__section" aria-labelledby="thesis-positive-title">
@@ -695,7 +834,7 @@ function FinalSystemOutputSection({
                   })}
                 </ul>
               ) : (
-                <p className="thesis-report__empty">No positive factors were returned by GICA.</p>
+                <p className="thesis-report__empty">Nothing in the records raised this score.</p>
               )}
             </section>
 
@@ -723,7 +862,7 @@ function FinalSystemOutputSection({
 
             {breakdown.length ? (
               <section className="thesis-report__section" aria-labelledby="thesis-evidence-title">
-                <h4 className="thesis-report__section-title" id="thesis-evidence-title">Calculation Evidence</h4>
+                <h4 className="thesis-report__section-title" id="thesis-evidence-title">Where the points came from</h4>
                 <dl className="thesis-evidence">
                   {breakdown.map((row) => {
                     const points = Number(row.points ?? row.contribution)
@@ -744,90 +883,13 @@ function FinalSystemOutputSection({
               </section>
             ) : null}
           </article>
-
-          <article className="thesis-report__card thesis-report__card--recommend" aria-labelledby="thesis-recommend-title">
-            <header className="thesis-report__head">
-              <h3 className="thesis-report__title" id="thesis-recommend-title">Breeding recommendation</h3>
-            </header>
-
-            <section className="thesis-report__section" aria-labelledby="thesis-final-title">
-              <h4 className="thesis-report__section-title" id="thesis-final-title">Final Pair Analysis</h4>
-              <p className="thesis-report__label">Compatibility</p>
-              <p className="thesis-report__score">
-                <strong>{score == null ? '—' : `${Math.round(score)} / 100`}</strong>
-                <span className={`thesis-report__rating is-${gicaTone(score)}`}>{status}</span>
-              </p>
-            </section>
-
-            <section className="thesis-report__section" aria-label="Key genetic indicators">
-              <dl className="thesis-indicators">
-                <div className="thesis-indicator">
-                  <dt>Genetic Risk</dt>
-                  <dd>{finalAnalysis.genetic_risk || risk?.level || '—'}</dd>
-                  {risk?.summary ? <p>{risk.summary}</p> : null}
-                </div>
-                <div className="thesis-indicator">
-                  <dt>Genetic Diversity</dt>
-                  <dd>{finalAnalysis.genetic_diversity || diversity?.level || '—'}</dd>
-                  {diversity?.summary ? <p>{diversity.summary}</p> : null}
-                </div>
-                <div className="thesis-indicator">
-                  <dt>Mutation Compatibility</dt>
-                  <dd>{finalAnalysis.mutation_compatibility || mutationCompat?.level || '—'}</dd>
-                  {mutationCompat?.detail ? <p>{mutationCompat.detail}</p> : null}
-                </div>
-                <div className="thesis-indicator">
-                  <dt>Species Compatibility</dt>
-                  <dd>{species.label || species.status || speciesBreakdownValue(breakdown) || '—'}</dd>
-                  {species.breeding_type ? <p>{evidenceValue(String(species.breeding_type).toUpperCase())}</p> : null}
-                </div>
-              </dl>
-            </section>
-
-            <section className="thesis-report__section" aria-labelledby="thesis-reco-title">
-              <h4 className="thesis-report__section-title" id="thesis-reco-title">Recommendation</h4>
-              <blockquote className="thesis-report__conclusion">{recommendation}</blockquote>
-              {finalAnalysis.inheritance_summary ? (
-                <p className="thesis-report__note">{finalAnalysis.inheritance_summary}</p>
-              ) : null}
-              {confidence?.level ? <p className="thesis-report__note">RBGIA data confidence: {confidence.level}</p> : null}
-            </section>
-
-            <section className="thesis-report__section thesis-report__basis" aria-labelledby="thesis-basis-title">
-              <h4 className="thesis-report__section-title" id="thesis-basis-title">Basis of Analysis</h4>
-              <dl className="thesis-basis">
-                <div><dt>RBGIA</dt><dd>Rule-Based Genetic Inheritance Analysis</dd></div>
-                <div><dt>GICA</dt><dd>Genetic Inheritance Compatibility Analysis</dd></div>
-                <div>
-                  <dt>Input Records</dt>
-                  <dd>{[parent1.bird_id, parent2.bird_id].filter(Boolean).join(' + ') || 'Parent 1 + Parent 2'}</dd>
-                </div>
-              </dl>
-            </section>
-
-            <button
-              type="button"
-              className="thesis-report-btn"
-              onClick={() => downloadBreedingReport({
-                pair,
-                species,
-                gica,
-                gicaScore: score,
-                eggs,
-                probabilities,
-                recommendation,
-              })}
-            >
-              Generate Report
-            </button>
-          </article>
         </div>
 
         <article className="thesis-card thesis-gica-report">
           <div className="thesis-gica-report__main">
             <header className="gica-breakdown__head">
-              <h3 className="gica-breakdown__title">GICA Breakdown</h3>
-              <p className="gica-breakdown__subtitle">Compatibility Breakdown</p>
+              <h3 className="gica-breakdown__title">Score breakdown</h3>
+              <p className="gica-breakdown__subtitle">Each part of the 100 points.</p>
             </header>
             {breakdown.length ? (
               <ol className="gica-breakdown">
@@ -853,10 +915,10 @@ function FinalSystemOutputSection({
                 })}
               </ol>
             ) : (
-              <p className="compute-result__empty">No GICA breakdown was returned.</p>
+              <p className="compute-result__empty">No score breakdown was stored for this pair.</p>
             )}
             <p className="gica-breakdown__footnote">
-              Final GICA score: <strong>{score == null ? '—' : `${Math.round(score)} / 100`}</strong> · {status}
+              Final score: <strong>{score == null ? '—' : `${Math.round(score)} / 100`}</strong> · {status}
             </p>
           </div>
 
@@ -864,10 +926,10 @@ function FinalSystemOutputSection({
             <section className="genetic-card">
               <h3 className="genetic-card__title">Genetic Risk</h3>
               <p className={`genetic-card__value is-${String(risk?.level || 'none').toLowerCase()}`}>{risk?.level || '—'}</p>
-              <p className="genetic-card__summary">{risk?.summary || 'No genetic-risk payload returned.'}</p>
+              <p className="genetic-card__summary">{risk?.summary || 'No genetic risk was recorded for this pair.'}</p>
               {(risk?.affected || []).length ? (
                 <section className="genetic-evidence">
-                  <h4 className="genetic-evidence__title">Inheritance Evidence</h4>
+                  <h4 className="genetic-evidence__title">Genes behind this risk</h4>
                   <ul className="genetic-evidence__list">
                     {risk.affected.slice(0, 6).map((item, index) => {
                       const share = item.fraction || (item.probability != null ? formatPercent(item.probability) : null)
@@ -884,7 +946,7 @@ function FinalSystemOutputSection({
                           ) : null}
                           {item.parent_1 || item.parent_2 ? (
                             <p className="genetic-evidence__parents">
-                              P1 {item.parent_1 || '—'} × P2 {item.parent_2 || '—'}
+                              {parentAlleleLine(parent1, item.parent_1, 'Bird 1')} × {parentAlleleLine(parent2, item.parent_2, 'Bird 2')}
                             </p>
                           ) : null}
                         </li>
@@ -897,10 +959,10 @@ function FinalSystemOutputSection({
             <section className="genetic-card">
               <h3 className="genetic-card__title">Genetic Diversity</h3>
               <p className={`genetic-card__value is-${String(diversity?.level || 'none').toLowerCase()}`}>{diversity?.level || '—'}</p>
-              <p className="genetic-card__summary">{diversity?.summary || 'No diversity payload returned.'}</p>
+              <p className="genetic-card__summary">{diversity?.summary || 'No diversity note was recorded for this pair.'}</p>
               {(diversity?.loci || []).length ? (
                 <section className="genetic-evidence">
-                  <h4 className="genetic-evidence__title">Evidence</h4>
+                  <h4 className="genetic-evidence__title">Genes compared</h4>
                   <ul className="genetic-evidence__list genetic-evidence__list--compact">
                     {diversity.loci.slice(0, 6).map((item, index) => (
                       <li key={`div-${index}`} className="genetic-evidence__item">
@@ -909,7 +971,7 @@ function FinalSystemOutputSection({
                           {item.relationship ? <span className="genetic-evidence__tag">{item.relationship}</span> : null}
                         </p>
                         <p className="genetic-evidence__parents">
-                          P1 {item.parent_1 || '—'} × P2 {item.parent_2 || '—'}
+                          {parentAlleleLine(parent1, item.parent_1, 'Bird 1')} × {parentAlleleLine(parent2, item.parent_2, 'Bird 2')}
                         </p>
                       </li>
                     ))}
@@ -954,7 +1016,7 @@ function FinalSystemOutputSection({
             />
             <DistributionPanel
               title="Split / Hidden Gene Distribution"
-              rows={predictedRows.length ? geneInheritanceRows(predictedRows, 'split_gene') : mendelianDistribution(probabilities.split_hidden_genes, predictedRows, outcomeSplit, 'split_gene')}
+              rows={cockSplitRows(predictedRows.length ? geneInheritanceRows(predictedRows, 'split_gene') : mendelianDistribution(probabilities.split_hidden_genes, predictedRows, outcomeSplit, 'split_gene'))}
               unavailableReason={unavailableReasonFor(probabilities, 'split_gene')}
             />
           </div>
@@ -993,8 +1055,8 @@ function FinalSystemOutputSection({
                       <td>{sexLabel(row.sex, row.sex_label)}</td>
                       <td>{outcomeBaseColor(row)}</td>
                       <td>{outcomeVisual(row)}</td>
-                      <td>{outcomeSplit(row)}</td>
-                      <td>{passedSummary(row.passed_from_parents)}</td>
+                      <td>{outcomeSplit(row) || '—'}</td>
+                      <td>{passedSummary(row.passed_from_parents, row)}</td>
                       <td><span className="thesis-table__geno">{displayText(row.genotype)}</span></td>
                       <td>{formatPercent(row) || '—'}</td>
                     </tr>
@@ -1046,12 +1108,8 @@ function ComputationalFlowSection({
       title="The path from the two birds to the score"
       eyebrow="02 · RBGIA passes the genes, then GICA scores the pair"
       sectionId="flow"
+      showNote={false}
     >
-      <LessonCue
-        why="Inheritance and the breeding score are different questions. Mixing them would hide whether a chick chance came from the Punnett square or from a weight."
-        how="RBGIA translates alleles, builds gametes, fills every Punnett box, and counts the odds. GICA reads those odds and awards points. The squares are not edited afterward."
-      />
-
       <ol className="algo-process" aria-label="Algorithm process for this pair">
         <li>
           <span className="algo-process__n">1</span>
@@ -1212,22 +1270,49 @@ function CompatibilitySection({ result }) {
   return (
     <ResultBlock
       title="The two birds"
-      eyebrow="03 · What RBGIA and GICA are allowed to read"
+      eyebrow="03 · Saved birds"
       sectionId="compatibility"
+      showNote={false}
     >
-      <LessonCue
-        why="A missing gene cannot be guessed. If the record does not store a genotype, that gene stays blank and the square for it is not invented."
-        how="Each parent’s species, sex, base color, visual mutations, and known splits are read from the saved bird. Looks alone are not turned into a genotype."
-      />
       <div className="gx-module compute-chapter">
         <SpeciesCompatibilityPanel species={model.species} />
-        <h3>Stored parent records</h3>
+        <h3>Saved on each bird</h3>
         <p className="compute-read">
-          These are the captured parental fields. Missing values stay missing — genotypes are not invented to fill gaps.
+          Color, mutations, and hidden genes from the saved record. A blank field stays blank.
         </p>
         <ParentGeneticProfile snapshot={result?.parent_snapshot} species={model.species} />
+        <PedigreeAccuracy pedigree={presentation.pedigree} />
       </div>
     </ResultBlock>
+  )
+}
+
+function PedigreeAccuracy({ pedigree }) {
+  const applied = pedigree?.applied || []
+  const possible = pedigree?.possible || []
+  if (!applied.length && !possible.length) return null
+
+  return (
+    <section className="pair-group">
+      <h3>Grandparents in this calculation</h3>
+      <p className="compute-read">
+        A proven gene is added in full. A possible gene changes the offspring odds only by its smaller chance.
+      </p>
+      <ul className="pair-genes">
+        {applied.map((item) => (
+          <li key={`applied-${item.bird_id}-${item.gene}`}>
+            <strong>{item.gene}</strong>
+            <span>{item.message}</span>
+          </li>
+        ))}
+        {possible.map((item) => (
+          <li key={`possible-${item.bird_id}-${item.gene}`}>
+            <strong>{item.gene} possible</strong>
+            <span>{item.message}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
   )
 }
 
@@ -1346,7 +1431,7 @@ function GeneticDistributionSection({ probabilities, eggs, exampleNote, rbgiaTra
   const sexRows = complete.length ? geneInheritanceRows(complete, 'sex') : (probabilities.sex || [])
   const baseRows = complete.length ? geneInheritanceRows(complete, 'base_color') : mendelianDistribution(probabilities.base_color, complete, outcomeBaseColor, 'base_color')
   const visualRows = complete.length ? geneInheritanceRows(complete, 'visual_mutation') : mendelianDistribution(probabilities.visual_mutations, complete, outcomeVisual, 'visual_mutation')
-  const splitRows = complete.length ? geneInheritanceRows(complete, 'split_gene') : mendelianDistribution(probabilities.split_hidden_genes, complete, outcomeSplit, 'split_gene')
+  const splitRows = cockSplitRows(complete.length ? geneInheritanceRows(complete, 'split_gene') : mendelianDistribution(probabilities.split_hidden_genes, complete, outcomeSplit, 'split_gene'))
   const boardProbabilities = {
     ...probabilities,
     base_color: baseRows,
@@ -1364,7 +1449,7 @@ function GeneticDistributionSection({ probabilities, eggs, exampleNote, rbgiaTra
       <PairInheritanceBoard trace={rbgiaTrace} probabilities={boardProbabilities} />
       {probabilities.message ? <p className="compute-result__empty">{probabilities.message}</p> : null}
       <p className="compute-dist-legend">
-        These four graphs are not the same list. Sex, base color, and the visual look are each their own chance. Each hidden gene has its own chance too, so a split carried by every chick is not drawn as another 12.5% bar.
+        These four graphs are not the same list. Sex, base color, and the visual look are each their own chance. The split graph counts cocks only. Each hidden gene a cock carries has its own chance, so a split on every cock is not drawn as another 12.5% bar.
         {exampleNote ? ` ${exampleNote}` : ''}
       </p>
       <div className="compute-dist-grid">
@@ -1409,8 +1494,8 @@ function GeneticDistributionSection({ probabilities, eggs, exampleNote, rbgiaTra
                   <div><dt>Sex</dt><dd>{sexLabel(row.sex, row.sex_label)}</dd></div>
                   <div><dt>Base Color</dt><dd>{outcomeBaseColor(row)}</dd></div>
                   <div><dt>Visual Mutations</dt><dd>{outcomeVisual(row)}</dd></div>
-                  <div><dt>Split / Hidden Genes</dt><dd>{outcomeSplit(row)}</dd></div>
-                  <div><dt>Passed from parents</dt><dd>{passedSummary(row.passed_from_parents)}</dd></div>
+                  {outcomeSplit(row) ? <div><dt>Split / Hidden Genes</dt><dd>{outcomeSplit(row)}</dd></div> : null}
+                  <div><dt>Passed from parents</dt><dd>{passedSummary(row.passed_from_parents, row)}</dd></div>
                   <div><dt>Genotype</dt><dd>{displayText(row.genotype)}</dd></div>
                   <div><dt>Means</dt><dd>{translateGenotype(row.genotype, row.base_color)}</dd></div>
                   <div><dt>Phenotype</dt><dd>{displayText(row.phenotype)}</dd></div>
@@ -1450,69 +1535,23 @@ function GeneticDistributionSection({ probabilities, eggs, exampleNote, rbgiaTra
   )
 }
 
-function ForecastSection({ forecast, species, eggs, clutchSimulation }) {
-  const hatchPct = toPercent(forecast.hatch_rate ?? forecast.hatch_rate_percent)
-
+function ForecastSection({ forecast, eggs, clutchSimulation }) {
   return (
     <ResultBlock
       title="Eggs and hatchlings"
-      eyebrow="07 · A nest estimate from the score"
+      eyebrow="07 · One possible nest"
       sectionId="forecast"
+      showNote={false}
     >
-      <LessonCue
-        why="Gene odds are not a nest size. Lovebirds lay a range of eggs, and not every egg hatches."
-        how="The forecast starts from the species clutch range, then moves inside that range using the compatibility score, diversity, and genetic load. Hatchlings apply the stored hatch rate. Living chick cards sample the unchanged RBGIA odds. Eggs that fail have no genotype. This is an estimate."
-      />
-      {clutchSimulation ? <ClutchSimulationPanel simulation={clutchSimulation} eggs={eggs} /> : null}
-      <div className="compute-summary__grid compute-summary__grid--forecast">
-        <MetricCard label="Estimated Eggs" value={forecast.estimated_eggs || 'Not documented in AGAPORA breeding-safety records. Biological clutch size is not invented.'} />
-        <MetricCard label="Estimated Hatchlings" value={forecast.estimated_hatchlings || 'Not documented in AGAPORA breeding-safety records. Hatchling count is not invented.'} />
-        <MetricCard
-          label="Hatch Rate"
-          value={hatchPct == null
-            ? (forecast.hatch_rate || forecast.hatch_rate_percent || 'Not documented in AGAPORA breeding-safety records.')
-            : formatPercent(hatchPct)}
-        >
-          {hatchPct != null ? <ProgressBar percent={hatchPct} tone="moderate" /> : null}
-        </MetricCard>
-        <MetricCard
-          label="Forecast Status"
-          value={[
-            forecast.estimated_eggs,
-            forecast.estimated_hatchlings,
-            forecast.hatch_rate,
-          ].some(forecastIsDocumented) ? 'Partial / documented values present' : 'Not documented'}
-        />
-        <MetricCard
-          label={clutchSimulation ? 'Simulated Clutch Cards' : 'Genetic Outcome Examples'}
-          value={forecast.eggs_forecast ?? forecast.genetic_outcome_groups ?? eggs.length ?? '—'}
-          hint={clutchSimulation
-            ? 'Simulated eggs (3–7) sampled from the compatibility-level clutch distribution — not a promised nest size.'
-            : 'Count of illustrative RBGIA outcome cards — not a biological clutch size.'}
-        />
-        <MetricCard
-          label="Biological / Record Basis"
-          value={species.fertility_status || 'Not documented'}
-          hint={species.risk_level ? `Risk: ${species.risk_level}` : (forecast.expected_hatch_range || undefined)}
-        />
-      </div>
-      {(forecast.forecast_factors || []).length ? (
-        <>
-          <h3>Forecast factors</h3>
-          <ul className="compute-result__list">
-            {(forecast.forecast_factors || []).map((factor) => <li key={factor}>{factor}</li>)}
-          </ul>
-        </>
-      ) : null}
-      {forecast.note ? <p className="compute-result__empty">{forecast.note}</p> : null}
+      <ClutchSimulationPanel simulation={clutchSimulation} eggs={eggs} />
+      {!clutchSimulation && forecast.note ? <p className="compute-result__empty">{forecast.note}</p> : null}
     </ResultBlock>
   )
 }
 
-function InheritanceSection({ inherited, report, eggs, rbgiaTrace, probabilities = {} }) {
+function InheritanceSection({ inherited, report, rbgiaTrace, probabilities = {} }) {
   const parent1Badges = parseTraitBadges(inherited.traits_from_parent_1)
   const parent2Badges = parseTraitBadges(inherited.traits_from_parent_2)
-  const topEgg = eggs[0]
   const trace = rbgiaTrace
 
   return (
@@ -1520,74 +1559,52 @@ function InheritanceSection({ inherited, report, eggs, rbgiaTrace, probabilities
       title="How each gene is passed"
       eyebrow="04 · RBGIA, Mendel’s rules, and the Punnett square"
       sectionId="inheritance"
+      showNote={false}
     >
-      <LessonCue
-        why="This is the heart of breeding genetics. You can see why a chick shows a color, why another only carries it, and why sons and daughters can differ on a sex-linked gene."
-        how="For every saved gene: translate the alleles, list what each parent can pass (gametes), fill the Punnett square, read the look, then add up the boxes. Dominant, recessive, and sex-linked genes each use their own rule."
-      />
       <MendelianPrimer />
+      <GeneActionBoard loci={trace?.loci} />
       <PairInheritanceBoard trace={trace} probabilities={probabilities} title="Parent alleles → chick odds" />
       {trace?.loci?.length ? <AlleleTranslation loci={trace.loci} title="Allele translation" /> : null}
       <div className="compute-inherit-flow">
         <article className="compute-inherit-card">
-          <h3>Parent 1 Contribution</h3>
-          <div className="compute-badge-wrap">
-            {parent1Badges.length
-              ? parent1Badges.map((badge) => (
-                <span key={`p1-${badge.kind}-${badge.value}`} className="compute-result__badge is-info">
-                  {badge.kind}: {badge.value}
-                </span>
-              ))
-              : <p className="compute-result__empty">None recorded</p>}
-          </div>
+          <h3>From parent 1</h3>
+          <TraitGroups badges={parent1Badges} />
         </article>
 
         <div className="compute-inherit-arrow" aria-hidden="true">↓</div>
 
         <article className="compute-inherit-card">
-          <h3>Parent 2 Contribution</h3>
-          <div className="compute-badge-wrap">
-            {parent2Badges.length
-              ? parent2Badges.map((badge) => (
-                <span key={`p2-${badge.kind}-${badge.value}`} className="compute-result__badge is-info">
-                  {badge.kind}: {badge.value}
-                </span>
-              ))
-              : <p className="compute-result__empty">None recorded</p>}
-          </div>
+          <h3>From parent 2</h3>
+          <TraitGroups badges={parent2Badges} />
         </article>
 
         <div className="compute-inherit-arrow" aria-hidden="true">↓</div>
 
         <article className="compute-inherit-card compute-inherit-card--offspring">
-          <h3>Offspring Inheritance</h3>
-          <div className="compute-summary__grid compute-summary__grid--forecast">
-            <MetricCard label="Base Color" value={inherited.base_color_inheritance?.name || report.most_likely_base_color || 'Not calculated'} />
-            <MetricCard
-              label="Visual Mutations"
-              value={listOrDash((inherited.mutation_inheritance || []).map((item) => item.name).filter(Boolean))}
-            />
-            <MetricCard label="Split / Hidden Genes" value={listOrDash(inherited.recessive_traits_carried)} />
-            <MetricCard label="Visible Traits / Phenotype" value={listOrDash(inherited.visible_traits)} />
-            <MetricCard
-              label="Genotype"
-              value={topEgg ? displayText(topEgg.genotype_display || topEgg.genotype) : 'See Genetic Distribution'}
-            />
-            <MetricCard
-              label="Parent contribution codes"
-              value={[
-                inherited.base_color_inheritance?.parent_1_code,
-                inherited.base_color_inheritance?.parent_2_code,
-              ].filter(Boolean).join(' × ') || '—'}
-            />
-          </div>
+          <h3>What chicks can inherit</h3>
+          <dl className="inherit-lines">
+            <div>
+              <dt>Color</dt>
+              <dd>{plainColorName(inherited.base_color_inheritance?.name || report.most_likely_base_color) || 'Not calculated'}</dd>
+            </div>
+            <div>
+              <dt>Shows</dt>
+              <dd>{joinNames((inherited.mutation_inheritance || []).map((item) => item.name))}</dd>
+            </div>
+            <div>
+              <dt>Hides</dt>
+              <dd>{joinNames(inherited.recessive_traits_carried)}</dd>
+            </div>
+          </dl>
+          <p className="inherit-lines__note">A gene in both lists can show on some chicks and stay hidden on others. Each square below gives that chance.</p>
 
           {inherited.base_color_inheritance?.results?.length ? (
             <DistributionPanel
-              title="Base-color outcome probabilities"
+              title="Color odds"
+              showCode={false}
               rows={inherited.base_color_inheritance.results.map((row) => ({
                 ...row,
-                trait: inherited.base_color_inheritance.name,
+                trait: colorOutcomeLabel(row),
               }))}
             />
           ) : null}
@@ -1643,13 +1660,40 @@ function NonLivingEggCard({ egg }) {
   )
 }
 
-function EggChickCard({ egg }) {
+function EggChickCard({ egg, locusOutcomes, speciesId }) {
   if (!isLivingEgg(egg)) return <NonLivingEggCard egg={egg} />
-  return <LivingChickCard egg={egg} />
+  return <LivingChickCard egg={egg} locusOutcomes={locusOutcomes} speciesId={speciesId} />
 }
 
-function LivingChickCard({ egg }) {
-  const pct = toPercent(egg.probability)
+function showsLabel(egg) {
+  const text = outcomeVisual(egg)
+  return text === 'Wild Type' ? 'None' : text
+}
+
+function hidesLabel(egg) {
+  const text = outcomeSplit(egg)
+  if (text) return text
+  return inheritsSplitGenes(egg) ? 'None' : 'None. A hen is not listed as split.'
+}
+
+function chickShare(egg) {
+  const pct = formatPercent(toPercent(egg.probability))
+  const fraction = egg.probability?.fraction
+  if (fraction && pct) return `${fraction} of chicks · ${pct}`
+  return fraction || pct || null
+}
+
+function chickPlainReason(egg) {
+  const look = breedingOutcome(chickFacts(egg))
+  const share = egg.probability?.fraction
+  const shareSentence = share ? ` The gene chart gives this look to ${share} of chicks.` : ''
+  const hideSentence = inheritsSplitGenes(egg) ? '' : ' Hidden genes are listed on the cock only.'
+  return `${look}.${shareSentence} Egg ${egg.egg_number} is one draw of that result.${hideSentence}`
+}
+
+function LivingChickCard({ egg, locusOutcomes, speciesId }) {
+  const facts = chickFacts(egg)
+  const share = chickShare(egg)
 
   return (
     <article className="compute-result__egg-card">
@@ -1660,39 +1704,52 @@ function LivingChickCard({ egg }) {
         </div>
         {egg.egg_status ? <StatusPill tone={eggStatusTone(egg.egg_status)}>{eggStatusShort(egg.egg_status, egg.egg_status_label)}</StatusPill> : null}
       </header>
-      <div className="compute-result__egg-body is-plain">
-        <div>
+      <div className="compute-result__egg-body is-chick">
+        <EggMutationMedia
+          names={facts.visual_mutations}
+          species={facts.species || speciesId}
+          baseColor={outcomeBaseColor(facts)}
+        />
+        <div className="compute-result__egg-copy">
           <dl className="compute-result__facts">
-            <div><dt>Species</dt><dd>{speciesLabel(egg.collected_traits?.species || egg.species)}</dd></div>
             <div><dt>Sex</dt><dd>{sexLabel(egg.sex, egg.sex_label || egg.collected_traits?.sex)}</dd></div>
-            <div><dt>Base color</dt><dd>{outcomeBaseColor(chickFacts(egg))}</dd></div>
-            <div><dt>Visual mutations</dt><dd>{outcomeVisual(chickFacts(egg))}</dd></div>
-            <div><dt>Hidden genes</dt><dd>{outcomeSplit(chickFacts(egg))}</dd></div>
+            <div><dt>Color</dt><dd>{outcomeBaseColor(facts)}</dd></div>
+            <div><dt>Shows</dt><dd>{showsLabel(facts)}</dd></div>
+            <div><dt>Hides</dt><dd>{hidesLabel(facts)}</dd></div>
+            <div><dt>Species</dt><dd>{speciesLabel(egg.collected_traits?.species || egg.species)}</dd></div>
             <div><dt>Genotype</dt><dd>{displayText(egg.genotype_display || egg.genotype)}</dd></div>
           </dl>
-          <PhenotypeMap source={egg} />
-          {pct != null ? (
-            <div className="compute-prob-row" style={{ marginTop: '0.75rem' }}>
+          {share ? (
+            <div className="compute-prob-row">
               <div className="compute-prob-row__head">
-                <span className="compute-prob-row__name">Chance</span>
-                <span className="compute-prob-row__pct">{formatPercent(pct)}{egg.probability?.fraction ? ` · ${egg.probability.fraction}` : ''}</span>
+                <span className="compute-prob-row__name">This look in the gene chart</span>
+                <span className="compute-prob-row__pct">{share}</span>
               </div>
-              <ProgressBar percent={pct} tone="info" />
+              <ProgressBar percent={toPercent(egg.probability)} tone="info" />
             </div>
           ) : null}
+          <p className="compute-result__egg-reason">{chickPlainReason(egg)}</p>
         </div>
       </div>
-      {egg.genetic_explanation ? (
-        <div className="compute-result__note">
-          <h4>Why this chick</h4>
-          <p>{egg.genetic_explanation}</p>
-        </div>
-      ) : null}
+      <details className="compute-result__egg-more">
+        <summary>Alleles and color</summary>
+        <EggInheritance egg={facts} locusOutcomes={locusOutcomes} />
+        <PhenotypeMap source={egg} />
+      </details>
     </article>
   )
 }
 
+function LessonPanel({ id, activeId, children }) {
+  return (
+    <div hidden={id !== activeId}>
+      {children}
+    </div>
+  )
+}
+
 function LessonChapters({
+  activeId = 'overview',
   result,
   pair,
   species,
@@ -1705,52 +1762,77 @@ function LessonChapters({
   livingEggs,
   forecast,
   clutchSimulation,
-  confidence,
   inherited,
   report,
   complexityReport,
+  speciesId,
+  locusOutcomes,
 }) {
   return (
     <>
-      <FinalSystemOutputSection
-        pair={pair}
-        species={species}
-        gica={gica}
-        gicaScore={gicaScore}
-        probabilities={probabilities}
-        eggs={livingEggs}
-        confidence={confidence}
-        parentSnapshot={result?.parent_snapshot}
-        compact
-      />
-      <ComputationalFlowSection
-        pair={pair}
-        gica={gica}
-        gicaScore={gicaScore}
-        rbgiaTrace={rbgiaTrace}
-        algorithm={algorithm}
-        parentSnapshot={result?.parent_snapshot}
-      />
-      <CompatibilitySection result={result} />
-      <InheritanceSection
-        inherited={inherited}
-        report={report}
-        eggs={livingEggs}
-        rbgiaTrace={rbgiaTrace}
-        probabilities={probabilities}
-      />
-      <GeneticDistributionSection
-        probabilities={probabilities}
-        eggs={livingEggs}
-        exampleNote={result?.result_presentation?.example_outcomes_note}
-        rbgiaTrace={rbgiaTrace}
-      />
-      <GicaSection result={result} gica={gica} gicaScore={gicaScore} rbgiaTrace={rbgiaTrace} />
-      <ForecastSection forecast={forecast} species={species} eggs={eggs} clutchSimulation={clutchSimulation} />
+      <LessonPanel id="overview" activeId={activeId}>
+        <OverviewSection
+          pair={pair}
+          species={species}
+          eggs={livingEggs}
+          parentSnapshot={result?.parent_snapshot}
+          speciesId={speciesId}
+          locusOutcomes={locusOutcomes}
+        />
+      </LessonPanel>
+      <LessonPanel id="final-output" activeId={activeId}>
+        <FinalSystemOutputSection
+          pair={pair}
+          species={species}
+          gica={gica}
+          gicaScore={gicaScore}
+          probabilities={probabilities}
+          eggs={livingEggs}
+          parentSnapshot={result?.parent_snapshot}
+          compact
+        />
+      </LessonPanel>
+      <LessonPanel id="flow" activeId={activeId}>
+        <ComputationalFlowSection
+          pair={pair}
+          gica={gica}
+          gicaScore={gicaScore}
+          rbgiaTrace={rbgiaTrace}
+          algorithm={algorithm}
+          parentSnapshot={result?.parent_snapshot}
+        />
+      </LessonPanel>
+      <LessonPanel id="compatibility" activeId={activeId}>
+        <CompatibilitySection result={result} />
+      </LessonPanel>
+      <LessonPanel id="inheritance" activeId={activeId}>
+        <InheritanceSection
+          inherited={inherited}
+          report={report}
+          rbgiaTrace={rbgiaTrace}
+          probabilities={probabilities}
+        />
+      </LessonPanel>
+      <LessonPanel id="distribution" activeId={activeId}>
+        <GeneticDistributionSection
+          probabilities={probabilities}
+          eggs={livingEggs}
+          exampleNote={result?.result_presentation?.example_outcomes_note}
+          rbgiaTrace={rbgiaTrace}
+        />
+      </LessonPanel>
+      <LessonPanel id="gica" activeId={activeId}>
+        <GicaSection result={result} gica={gica} gicaScore={gicaScore} rbgiaTrace={rbgiaTrace} />
+      </LessonPanel>
+      <LessonPanel id="forecast" activeId={activeId}>
+        <ForecastSection forecast={forecast} eggs={eggs} clutchSimulation={clutchSimulation} />
+      </LessonPanel>
       {complexityReport ? (
-        <div id="process-complexity" className="compute-process__anchor">
-          <CombinedComplexitySection report={complexityReport} />
-        </div>
+        <LessonPanel id="complexity" activeId={activeId}>
+          <div id="process-complexity" className="compute-process__anchor">
+            <CombinedComplexitySection report={complexityReport} />
+          </div>
+        </LessonPanel>
       ) : null}
     </>
   )
@@ -1762,6 +1844,8 @@ export default function ComputationResult({ resultId, sectionId }) {
   const [area, setArea] = useState('dashboard')
   const [headToTailCatalog, setHeadToTailCatalog] = useState(null)
 
+  const activeSection = resolveSection(sectionId) || RESULT_SECTIONS[0].id
+
   const handleSectionChange = useCallback((nextSection) => {
     const resolved = resolveSection(nextSection)
     if (!resolved) return
@@ -1769,17 +1853,7 @@ export default function ComputationResult({ resultId, sectionId }) {
     if (window.location.hash.replace(/^#/, '') !== nextHash) {
       window.location.hash = nextHash
     }
-    document.getElementById(`process-${resolved}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }, [resultId])
-
-  useEffect(() => {
-    const resolved = resolveSection(sectionId)
-    if (!resolved || !result) return undefined
-    const node = document.getElementById(`process-${resolved}`)
-    if (!node) return undefined
-    node.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    return undefined
-  }, [sectionId, result])
 
   useEffect(() => {
     let active = true
@@ -1830,24 +1904,10 @@ export default function ComputationResult({ resultId, sectionId }) {
   const livingEggs = useMemo(() => eggs.filter(isLivingEgg), [eggs])
   const inherited = presentation.inherited_traits || {}
   const report = presentation.report || {}
-  const confidence = presentation.data_confidence || {}
   const algorithm = presentation.algorithm || {}
 
   const gicaScore = typeof gica.score === 'number' ? gica.score : (typeof pair.score === 'number' ? pair.score : null)
   const rbgiaTrace = useMemo(() => (result ? buildRbgiaTrace(result) : null), [result])
-  const runSummary = useMemo(() => {
-    const parent1 = result?.parent_snapshot?.parent_1?.bird_id || pair?.parent_1?.bird_id || 'Parent 1'
-    const parent2 = result?.parent_snapshot?.parent_2?.bird_id || pair?.parent_2?.bird_id || 'Parent 2'
-    return {
-      parents: `${parent1} × ${parent2}`,
-      loci: rbgiaTrace?.loci?.length ?? algorithm?.loci_processed ?? '—',
-      outcomes: rbgiaTrace?.summary?.totalOutcomes ?? '—',
-      score: gicaScore == null ? '—' : `${Math.round(gicaScore)} / 100`,
-      status: gicaStatusLabel(pair?.label || gica.label, gicaScore),
-      eggs: forecastIsDocumented(forecast.estimated_eggs) ? String(forecast.estimated_eggs) : 'Not documented',
-      hatchlings: forecastIsDocumented(forecast.estimated_hatchlings) ? String(forecast.estimated_hatchlings) : 'Not documented',
-    }
-  }, [result, pair, gica, gicaScore, rbgiaTrace, algorithm, forecast])
   const complexityReport = useMemo(
     () => (result ? buildComplexityReport(result, rbgiaTrace) : null),
     [result, rbgiaTrace],
@@ -1861,7 +1921,9 @@ export default function ComputationResult({ resultId, sectionId }) {
             <p className="compute-result__eyebrow">Breeding complete</p>
             <h1>Lovebird pair compatibility</h1>
             <p className="compute-result__lede">
-              Read the result first. Then follow RBGIA, the way genes pass, and GICA, the way that becomes a score.
+              {area === 'eggs'
+                ? 'One possible nest, egg by egg. A hatched chick shows sex, color, and hidden genes. An egg that fails is left blank.'
+                : 'Start with the score. Use the outline to open one part at a time: how the genes pass, then why the score landed there.'}
             </p>
           </div>
           {result ? (
@@ -1893,14 +1955,11 @@ export default function ComputationResult({ resultId, sectionId }) {
 
         {result && area === 'dashboard' ? (
           <BreedingLesson
-            parents={runSummary.parents}
-            scoreText={runSummary.score}
-            status={runSummary.status}
-            tone={gicaTone(gicaScore)}
-            recommendation={pair?.recommendation || gica.recommendation || ''}
+            activeId={activeSection}
             onJump={handleSectionChange}
           >
             <LessonChapters
+              activeId={activeSection}
               result={result}
               pair={pair}
               species={species}
@@ -1913,10 +1972,11 @@ export default function ComputationResult({ resultId, sectionId }) {
               livingEggs={livingEggs}
               forecast={forecast}
               clutchSimulation={clutchSimulation}
-              confidence={confidence}
               inherited={inherited}
               report={report}
               complexityReport={complexityReport}
+              speciesId={speciesId}
+              locusOutcomes={presentation.genetic_analysis?.outcomes}
             />
           </BreedingLesson>
         ) : null}
@@ -1925,16 +1985,19 @@ export default function ComputationResult({ resultId, sectionId }) {
           <div className="compute-result__stack" role="tabpanel">
             <ResultBlock title="Eggs and chicks" eyebrow="In nest order">
               <LessonCue
-                why="A nest is not the same thing as a gene chart. Some eggs fail, and those eggs are not given a color or a genotype."
-                how="Eggs are listed from first to last. A living chick shows sex, base color, visible mutations, and hidden genes. The chances still come from the RBGIA squares above."
+                why="This page is one possible nest. The gene chart says how often each look can appear. An egg that fails is left blank: no color and no genotype."
+                how="Eggs stay in lay order. A hatched chick shows sex, color, what you can see, and what a cock can hide. The fraction is that look’s share of all chicks."
               />
               <ClutchSimulationPanel simulation={clutchSimulation} eggs={eggs} />
               {eggs.length ? (
                 <div className="compute-result__egg-grid">
+                  <h3 className="compute-result__egg-grid-title">What each hatched chick inherited</h3>
                   {eggs.map((egg) => (
                     <EggChickCard
                       key={egg.egg_outcome_id || egg.outcome_key || egg.egg_number}
                       egg={egg}
+                      locusOutcomes={presentation.genetic_analysis?.outcomes}
+                      speciesId={speciesId}
                     />
                   ))}
                 </div>
@@ -1947,4 +2010,5 @@ export default function ComputationResult({ resultId, sectionId }) {
       </div>
     </main>
   )
+}
 }

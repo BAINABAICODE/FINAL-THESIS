@@ -1,12 +1,23 @@
 import { KeyValue, StatusPill } from '../shared/primitives'
 
+function plainSex(value) {
+  const text = String(value || '').toLowerCase()
+  if (text.includes('female') || text.includes('hen')) return 'Female'
+  if (text.includes('male') || text.includes('cock')) return 'Male'
+  return value || 'Sex not saved'
+}
+
 function ParentSpecies({ label, parent }) {
   return (
     <div className="gx-species__parent">
       <p className="gx-species__slot">{label}</p>
-      <p className="gx-species__common">{parent?.species || 'Not provided'}</p>
-      <p className="gx-species__sci">{parent?.scientific_name || 'Scientific name not provided'}</p>
-      <p className="gx-species__meta">{parent?.bird_id || '—'} · {parent?.sex || 'Sex not provided'}{parent?.species_group ? ` · ${parent.species_group}` : ''}</p>
+      <p className="gx-species__common">{parent?.species || 'Not saved'}</p>
+      <p className="gx-species__sci">{parent?.scientific_name || 'Scientific name not saved'}</p>
+      <p className="gx-species__meta">
+        <span>Bird {parent?.bird_id || '—'}</span>
+        <span>{plainSex(parent?.sex)}</span>
+        {parent?.species_group ? <span>{parent.species_group}</span> : null}
+      </p>
     </div>
   )
 }
@@ -19,7 +30,7 @@ export default function SpeciesCompatibilityPanel({ species }) {
         <ParentSpecies label="Parent 1" parent={species.parent1} />
         <div className="gx-species__verdict">
           <StatusPill tone={tone}>
-            {species.sameSpecies ? '✓ Same species' : species.interspecific ? '⚠ Interspecific pairing' : 'Not documented'}
+            {species.sameSpecies ? 'Same species' : species.interspecific ? 'Different species' : 'Not saved'}
           </StatusPill>
         </div>
         <ParentSpecies label="Parent 2" parent={species.parent2} />
@@ -31,12 +42,11 @@ export default function SpeciesCompatibilityPanel({ species }) {
         </p>
       ) : null}
       <KeyValue rows={[
-        ['Breeding type', species.breedingType ? species.breedingType.replace(/_/g, ' ') : null],
-        ['Species compatibility', species.scorePercent != null ? `${species.scorePercent}%` : null],
-        ['Prediction allowed', species.predictionAllowed ? 'Yes' : 'No'],
-        ['Scientific basis', species.basis],
-        ['Rule applied', species.methodology],
+        ['Pair', species.sameSpecies ? 'Same species' : species.interspecific ? 'Different species' : null],
+        ['Species match', species.scorePercent != null ? `${species.scorePercent}%` : null],
+        ['Can calculate', species.predictionAllowed ? 'Yes' : 'No'],
       ]} />
+      {species.sameSpecies ? <p className="gx-note">Both birds are the same species, so this pair can be calculated.</p> : null}
       {species.warning ? <p className="gx-alert is-warn">{species.warning}</p> : null}
     </div>
   )

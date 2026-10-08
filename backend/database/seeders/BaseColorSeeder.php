@@ -39,9 +39,10 @@ class BaseColorSeeder extends Seeder
             $color = BaseColor::query()->updateOrCreate(
                 [
                     'lovebird_species_id' => $species->id,
-                    'name' => $record['name'],
+                    'genetic_code' => $record['genetic_code'],
                 ],
                 [
+                    'name' => $record['name'],
                     'species_name' => $species->common_name,
                     'scientific_name' => $record['scientific_name'],
                     'series' => $record['series'],
