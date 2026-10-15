@@ -6,6 +6,7 @@ export default function EggMutationMedia({
   species,
   baseColor,
   sizes = '(max-width: 639px) 72px, 96px',
+  compact = false,
 }) {
   const visual = resolveMutationVisual(names, { species, baseColor })
   const [swapToWild, setSwapToWild] = useState(false)
@@ -53,15 +54,15 @@ export default function EggMutationMedia({
           Wild type
         </span>
       )}
-      <figcaption className="compute-result__egg-chip">{visual.chip}</figcaption>
-      {visual.extras.length ? (
+      {compact ? null : <figcaption className="compute-result__egg-chip">{visual.chip}</figcaption>}
+      {!compact && visual.extras.length ? (
         <ul className="compute-result__egg-chips" aria-label="Other visual mutations">
           {visual.extras.map((name) => (
             <li key={name}>{name}</li>
           ))}
         </ul>
       ) : null}
-      {visual.usedFallback ? (
+      {!compact && visual.usedFallback ? (
         <p className="compute-result__egg-fallback">No {visual.chip} photo. Wild type is shown instead.</p>
       ) : null}
     </figure>

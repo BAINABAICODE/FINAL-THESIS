@@ -4194,3 +4194,274 @@ main.breed.compute-result .pair-overview__chick.is-hen {
 #process-final-output .genetic-evidence__tag {
   font-size: 0.78rem;
 }
+
+.actual-breed {
+  display: grid;
+  gap: 0.85rem;
+  margin-bottom: 1.15rem;
+}
+
+.actual-breed__lead,
+.actual-breed__count-note {
+  margin: 0;
+  max-width: 46rem;
+  color: rgba(6, 28, 19, 0.82);
+}
+
+.actual-breed__count {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem 0.85rem;
+}
+
+.actual-breed__count-label {
+  margin: 0;
+  font-weight: 750;
+  color: var(--forest-deep);
+}
+
+.actual-breed__stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.actual-breed__stepper .breed__btn {
+  width: 2.4rem;
+  height: 2.4rem;
+  padding: 0;
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+.actual-breed__stepper input {
+  width: 4.4rem;
+  height: 2.4rem;
+  border: 1px solid rgba(15, 92, 82, 0.22);
+  border-radius: 0.7rem;
+  background: #fff;
+  color: var(--forest-deep);
+  font: inherit;
+  font-weight: 750;
+  text-align: center;
+}
+
+.actual-breed__eggs {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: 0.6rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.actual-breed__egg {
+  display: grid;
+  gap: 0.45rem;
+  border: 1px solid rgba(15, 92, 82, 0.14);
+  border-radius: 0.8rem;
+  background: #fff;
+  padding: 0.7rem 0.75rem;
+}
+
+.actual-breed__egg.is-active {
+  border-color: #b8922a;
+  box-shadow: inset 0 0 0 1px #b8922a;
+}
+
+.actual-breed__egg-pick {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.actual-breed__egg-copy {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+main.breed.compute-result .actual-breed__egg .compute-result__egg-media {
+  width: 64px;
+  flex: 0 0 64px;
+  margin: 0;
+}
+
+main.breed.compute-result .actual-breed__egg .compute-result__egg-media img,
+main.breed.compute-result .actual-breed__egg .compute-result__egg-media-fallback {
+  width: 64px;
+  max-width: 64px;
+  height: 64px;
+  max-height: 64px;
+  aspect-ratio: 1;
+  object-fit: contain;
+  background: #f7f3ea;
+}
+
+main.breed.compute-result .actual-breed__type .compute-result__egg-media {
+  margin: 0 0 0.7rem;
+}
+
+main.breed.compute-result .actual-breed__type .compute-result__egg-media img,
+main.breed.compute-result .actual-breed__type .compute-result__egg-media-fallback {
+  width: 100%;
+  max-width: none;
+  height: 180px;
+  max-height: 180px;
+  aspect-ratio: auto;
+  object-fit: contain;
+  background: #f7f3ea;
+}
+
+.actual-breed__egg-no {
+  font-size: 0.78rem;
+  font-weight: 750;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #9a7a1c;
+}
+
+.actual-breed__egg-pick strong {
+  font-size: 0.98rem;
+  color: var(--forest-deep);
+}
+
+.actual-breed__hatch {
+  justify-self: start;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.9rem;
+}
+
+.actual-breed__type {
+  display: block;
+  width: 100%;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.actual-breed__type.is-selected {
+  border-color: #0f5c52;
+  box-shadow: inset 0 0 0 2px #0f5c52;
+}
+
+.actual-breed__type header h4 {
+  text-align: left;
+}
+
+.actual-breed__save {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem 0.9rem;
+}
+
+.actual-breed__save .breed__btn--primary {
+  padding: 0.65rem 1.1rem;
+}
+
+.actual-breed__confirm {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+}
+
+.actual-breed__confirm-backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: rgba(6, 28, 19, 0.55);
+  cursor: pointer;
+}
+
+.actual-breed__confirm-panel {
+  position: relative;
+  width: min(36rem, 100%);
+  max-height: min(80vh, 40rem);
+  overflow: auto;
+  border: 1px solid rgba(212, 175, 55, 0.45);
+  border-radius: 1rem;
+  background: #fbf6e8;
+  color: #061c13;
+  padding: 1.15rem 1.2rem 1.2rem;
+  box-shadow: 0 24px 50px rgba(6, 28, 19, 0.35);
+}
+
+.actual-breed__confirm-panel h3 {
+  margin: 0 0 0.45rem;
+  font-family: var(--font-display);
+  color: var(--forest-deep);
+}
+
+.actual-breed__confirm-panel p {
+  margin: 0 0 0.8rem;
+}
+
+.actual-breed__confirm-panel ol {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0 0 1rem;
+  padding: 0;
+  list-style: none;
+}
+
+.actual-breed__confirm-panel li {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  border: 1px solid rgba(15, 92, 82, 0.14);
+  border-radius: 0.7rem;
+  background: #fff;
+  padding: 0.55rem 0.7rem;
+}
+
+.actual-breed__confirm-copy {
+  display: grid;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.actual-breed__confirm-copy strong {
+  color: var(--forest-deep);
+}
+
+main.breed.compute-result .actual-breed__confirm-panel .compute-result__egg-media {
+  width: 72px;
+  flex: 0 0 72px;
+  margin: 0;
+}
+
+main.breed.compute-result .actual-breed__confirm-panel .compute-result__egg-media img,
+main.breed.compute-result .actual-breed__confirm-panel .compute-result__egg-media-fallback {
+  width: 72px;
+  max-width: 72px;
+  height: 72px;
+  max-height: 72px;
+  aspect-ratio: 1;
+  object-fit: contain;
+  background: #f7f3ea;
+}
+
+.actual-breed__confirm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.actual-breed__confirm-actions .breed__btn {
+  padding: 0.55rem 0.95rem;
+}

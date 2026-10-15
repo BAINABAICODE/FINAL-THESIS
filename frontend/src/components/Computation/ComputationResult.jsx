@@ -21,6 +21,8 @@ import ClutchSimulationPanel from './outcomes/ClutchSimulationPanel'
 import EggInheritance from './outcomes/EggInheritance'
 import EggMutationMedia from './outcomes/EggMutationMedia'
 import PairOverview from './outcomes/PairOverview'
+import ActualBreedingPanel from './outcomes/ActualBreedingPanel'
+import { loadActualBreed, resolveSlots, saveActualBreed, savedClutchRecord, slotsToChicks, slotsToEggs } from './outcomes/actualBreeding'
 import { eggStatusShort, eggStatusTone, isLivingEgg } from './outcomes/eggStatus'
 import { StatusPill } from './shared/primitives'
 import { barColor, breedingOutcome, geneInheritanceRows, inheritsSplitGenes, outcomeBaseColor, outcomeSplit, outcomeVisual, percentText } from './shared/format'
@@ -708,15 +710,39 @@ function OverviewSection({
   parentSnapshot,
   speciesId,
   locusOutcomes,
+  actualBreed,
+  computedEggCount,
+  chickTypes,
+  onActualBreedChange,
 }) {
   const parent1 = pair?.parent_1 || species.parent_1 || {}
   const parent2 = pair?.parent_2 || species.parent_2 || {}
-  const chicks = useMemo(() => (
+  const showSaved = actualBreed?.saved === true
+  const savedSlots = useMemo(
+    () => resolveSlots(savedClutchRecord(actualBreed), actualBreed?.savedEggCount ?? 0),
+    [actualBreed],
+  )
+  const computedChicks = useMemo(() => (
     [...eggs]
       .filter(isLivingEgg)
       .sort((a, b) => Number(a.egg_number) - Number(b.egg_number))
       .map((egg) => chickFacts(egg))
   ), [eggs])
+  const actualChicks = useMemo(
+    () => slotsToChicks(savedSlots, chickTypes).map((chick) => chickFacts(chick)),
+    [savedSlots, chickTypes],
+  )
+  const hatchedSlots = savedSlots.filter((slot) => slot.hatched)
+  let emptyMessage = 'No living chicks hatched in this nest.'
+  let nestNote = 'Hatched eggs from the nest, in egg order.'
+  let chicksTitle = 'Living chicks'
+  if (showSaved) {
+    chicksTitle = 'Real life clutch'
+    nestNote = 'Saved eggs and chicks, in egg order.'
+    if (!savedSlots.length) emptyMessage = 'This pair laid no eggs.'
+    else if (!hatchedSlots.length) emptyMessage = 'Every egg in this clutch did not hatch.'
+    else emptyMessage = 'Choose a calculated chick for each egg that hatched.'
+  }
 
   return (
     <ResultBlock
@@ -725,13 +751,23 @@ function OverviewSection({
       sectionId="overview"
       showNote={false}
     >
+      <ActualBreedingPanel
+        record={actualBreed}
+        computedEggCount={computedEggCount}
+        chickTypes={chickTypes}
+        speciesId={speciesId}
+        onChange={onActualBreedChange}
+      />
       <PairOverview
         parentSnapshot={parentSnapshot}
         parent1Fallback={parent1}
         parent2Fallback={parent2}
-        chicks={chicks}
+        chicks={showSaved ? actualChicks : computedChicks}
         speciesId={speciesId}
         locusOutcomes={locusOutcomes}
+        chicksTitle={chicksTitle}
+        nestNote={nestNote}
+        emptyMessage={emptyMessage}
       />
     </ResultBlock>
   )
@@ -1767,6 +1803,10 @@ function LessonChapters({
   complexityReport,
   speciesId,
   locusOutcomes,
+  actualBreed,
+  computedEggCount,
+  chickTypes,
+  onActualBreedChange,
 }) {
   return (
     <>
@@ -1778,6 +1818,10 @@ function LessonChapters({
           parentSnapshot={result?.parent_snapshot}
           speciesId={speciesId}
           locusOutcomes={locusOutcomes}
+          actualBreed={actualBreed}
+          computedEggCount={computedEggCount}
+          chickTypes={chickTypes}
+          onActualBreedChange={onActualBreedChange}
         />
       </LessonPanel>
       <LessonPanel id="final-output" activeId={activeId}>
@@ -1843,6 +1887,7 @@ export default function ComputationResult({ resultId, sectionId }) {
   const [error, setError] = useState('')
   const [area, setArea] = useState('dashboard')
   const [headToTailCatalog, setHeadToTailCatalog] = useState(null)
+  const [actualBreed, setActualBreed] = useState(() => loadActualBreed(resultId))
 
   const activeSection = resolveSection(sectionId) || RESULT_SECTIONS[0].id
 
@@ -1853,6 +1898,15 @@ export default function ComputationResult({ resultId, sectionId }) {
     if (window.location.hash.replace(/^#/, '') !== nextHash) {
       window.location.hash = nextHash
     }
+  }, [resultId])
+
+  useEffect(() => {
+    setActualBreed(loadActualBreed(resultId))
+  }, [resultId])
+
+  const handleActualBreedChange = useCallback((next) => {
+    setActualBreed(next)
+    saveActualBreed(resultId, next)
   }, [resultId])
 
   useEffect(() => {
@@ -1902,6 +1956,20 @@ export default function ComputationResult({ resultId, sectionId }) {
   }, [probabilities, headToTailCatalog, speciesId])
   const clutchSimulation = presentation.clutch_simulation || null
   const livingEggs = useMemo(() => eggs.filter(isLivingEgg), [eggs])
+  const chickTypes = useMemo(() => {
+    const complete = enrichedProbabilities.complete_offspring
+    return complete?.length ? complete : livingEggs
+  }, [enrichedProbabilities.complete_offspring, livingEggs])
+  const computedEggCount = eggs.length || Number(clutchSimulation?.clutch_size) || 0
+  const showingActual = actualBreed.saved === true
+  const recordedSlots = useMemo(
+    () => resolveSlots(savedClutchRecord(actualBreed), actualBreed.savedEggCount ?? 0),
+    [actualBreed],
+  )
+  const recordedEggs = useMemo(
+    () => (showingActual ? slotsToEggs(recordedSlots, chickTypes) : eggs),
+    [showingActual, recordedSlots, chickTypes, eggs],
+  )
   const inherited = presentation.inherited_traits || {}
   const report = presentation.report || {}
   const algorithm = presentation.algorithm || {}
@@ -1922,7 +1990,9 @@ export default function ComputationResult({ resultId, sectionId }) {
             <h1>Lovebird pair compatibility</h1>
             <p className="compute-result__lede">
               {area === 'eggs'
-                ? 'One possible nest, egg by egg. A hatched chick shows sex, color, and hidden genes. An egg that fails is left blank.'
+                ? (showingActual
+                  ? 'The eggs below are the clutch you recorded. A chosen chick shows that calculated bird. An egg that did not hatch stays blank.'
+                  : 'One possible nest, egg by egg. A hatched chick shows sex, color, and hidden genes. An egg that fails is left blank.')
                 : 'Start with the score. Use the outline to open one part at a time: how the genes pass, then why the score landed there.'}
             </p>
           </div>
@@ -1944,7 +2014,7 @@ export default function ComputationResult({ resultId, sectionId }) {
                 className={`compute-result__tab${area === 'eggs' ? ' is-active' : ''}`}
                 onClick={() => setArea('eggs')}
               >
-                Eggs and chicks{eggs.length ? ` (${eggs.length}${clutchSimulation ? ` eggs · ${livingEggs.length} chicks` : ''})` : ''}
+                Eggs and chicks{recordedEggs.length ? ` (${recordedEggs.length}${!showingActual && clutchSimulation ? ` eggs · ${livingEggs.length} chicks` : ''})` : ''}
               </button>
             </div>
           ) : null}
@@ -1977,6 +2047,10 @@ export default function ComputationResult({ resultId, sectionId }) {
               complexityReport={complexityReport}
               speciesId={speciesId}
               locusOutcomes={presentation.genetic_analysis?.outcomes}
+              actualBreed={actualBreed}
+              computedEggCount={computedEggCount}
+              chickTypes={chickTypes}
+              onActualBreedChange={handleActualBreedChange}
             />
           </BreedingLesson>
         ) : null}
@@ -1985,24 +2059,46 @@ export default function ComputationResult({ resultId, sectionId }) {
           <div className="compute-result__stack" role="tabpanel">
             <ResultBlock title="Eggs and chicks" eyebrow="In nest order">
               <LessonCue
-                why="This page is one possible nest. The gene chart says how often each look can appear. An egg that fails is left blank: no color and no genotype."
-                how="Eggs stay in lay order. A hatched chick shows sex, color, what you can see, and what a cock can hide. The fraction is that look’s share of all chicks."
+                why={showingActual
+                  ? 'These eggs are the clutch you recorded on Overview. Each hatched egg uses the calculated chick you selected.'
+                  : 'This page is one possible nest. The gene chart says how often each look can appear. An egg that fails is left blank: no color and no genotype.'}
+                how={showingActual
+                  ? 'Change the egg count and the chosen birds from the Overview switch. Eggs stay in the order you recorded.'
+                  : 'Eggs stay in lay order. A hatched chick shows sex, color, what you can see, and what a cock can hide. The fraction is that look’s share of all chicks.'}
               />
-              <ClutchSimulationPanel simulation={clutchSimulation} eggs={eggs} />
-              {eggs.length ? (
+              {showingActual ? null : <ClutchSimulationPanel simulation={clutchSimulation} eggs={eggs} />}
+              {recordedEggs.length ? (
                 <div className="compute-result__egg-grid">
-                  <h3 className="compute-result__egg-grid-title">What each hatched chick inherited</h3>
-                  {eggs.map((egg) => (
-                    <EggChickCard
-                      key={egg.egg_outcome_id || egg.outcome_key || egg.egg_number}
-                      egg={egg}
-                      locusOutcomes={presentation.genetic_analysis?.outcomes}
-                      speciesId={speciesId}
-                    />
+                  <h3 className="compute-result__egg-grid-title">
+                    {showingActual ? 'Recorded eggs' : 'What each hatched chick inherited'}
+                  </h3>
+                  {recordedEggs.map((egg, index) => (
+                    egg.unassigned ? (
+                      <article key={`unassigned-${egg.egg_number}`} className="compute-result__egg-card">
+                        <header className="compute-result__egg-head">
+                          <div>
+                            <p className="compute-result__eyebrow">{`Egg ${egg.egg_number}`}</p>
+                            <h3>Chick not chosen yet</h3>
+                          </div>
+                        </header>
+                        <p className="compute-prob-row__fraction">Choose this egg’s bird from the calculated types on Overview.</p>
+                      </article>
+                    ) : (
+                      <EggChickCard
+                        key={`egg-${egg.egg_number}-${egg.egg_outcome_id || egg.outcome_key || index}`}
+                        egg={egg}
+                        locusOutcomes={presentation.genetic_analysis?.outcomes}
+                        speciesId={speciesId}
+                      />
+                    )
                   ))}
                 </div>
               ) : (
-                <p className="compute-result__empty">No eggs were calculated for this pair. Missing genotypes were left missing.</p>
+                <p className="compute-result__empty">
+                  {showingActual
+                    ? 'This pair laid no eggs.'
+                    : 'No eggs were calculated for this pair. Missing genotypes were left missing.'}
+                </p>
               )}
             </ResultBlock>
           </div>
@@ -2010,5 +2106,4 @@ export default function ComputationResult({ resultId, sectionId }) {
       </div>
     </main>
   )
-}
 }

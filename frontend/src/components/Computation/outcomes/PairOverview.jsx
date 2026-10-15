@@ -195,6 +195,9 @@ export default function PairOverview({
   chicks = [],
   speciesId,
   locusOutcomes = [],
+  chicksTitle = 'Living chicks',
+  nestNote = 'Hatched eggs from the nest, in egg order.',
+  emptyMessage = 'No living chicks hatched in this nest.',
 }) {
   const parents = [
     {
@@ -221,12 +224,12 @@ export default function PairOverview({
       </div>
       <div className="pair-overview__chicks">
         <header className="pair-overview__chicks-head">
-          <h3 className="pair-overview__chicks-title">Living chicks</h3>
+          <h3 className="pair-overview__chicks-title">{chicksTitle}</h3>
           <p className="pair-overview__legend">
             <span className="is-cock">Blue is the cock</span>
             <span className="is-hen">Pink is the hen</span>
           </p>
-          <p className="pair-overview__nest-note">Hatched eggs from the nest, in egg order.</p>
+          <p className="pair-overview__nest-note">{nestNote}</p>
         </header>
         {chicks.length ? (
           <div className="pair-overview__chick-list">
@@ -240,7 +243,7 @@ export default function PairOverview({
             ))}
           </div>
         ) : (
-          <p className="pair-overview__empty">No living chicks hatched in this nest.</p>
+          <p className="pair-overview__empty">{emptyMessage}</p>
         )}
       </div>
     </div>

@@ -68,7 +68,8 @@ export default function Navbar({ activeRoute = 'home' }) {
     activeRoute === 'register' ||
     activeRoute === 'birds' ||
     activeRoute === 'history' ||
-    activeRoute === 'breeding'
+    activeRoute === 'breeding' ||
+    activeRoute === 'progress'
 
   return (
     <header
@@ -93,6 +94,7 @@ export default function Navbar({ activeRoute = 'home' }) {
                   onClick={handleCloseMenu}
                 >
                   {link.label}
+                  {link.fresh ? <span className="navbar__fresh">New</span> : null}
                 </a>
               </li>
             ))}
